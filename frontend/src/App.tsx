@@ -14,8 +14,6 @@ import Fees from './pages/Fees';
 import Classes from './pages/Classes';
 import Messages from './pages/Messages';
 import LMS from './pages/LMS';
-import SuperAdminDashboard from './pages/SuperAdminDashboard';
-import TenantManagement from './pages/TenantManagement';
 import PlatformAnalytics from './pages/PlatformAnalytics';
 import PlatformDashboard from './pages/superadmin/PlatformDashboard';
 import TenantManagementEnhanced from './pages/superadmin/TenantManagementEnhanced';
@@ -37,6 +35,16 @@ import StaffHCM from './pages/schooladmin/StaffHCM';
 import CommunicationHub from './pages/schooladmin/CommunicationHub';
 import ReportsAnalytics from './pages/schooladmin/ReportsAnalytics';
 import MinistryExports from './pages/schooladmin/MinistryExports';
+import TeacherDashboard from './pages/teachers/TeacherDashboard';
+import MyClasses from './pages/teachers/MyClasses';
+import LessonPlanner from './pages/teachers/LessonPlanner';
+import AttendanceManagement from './pages/teachers/AttendanceManagement';
+import Gradebook from './pages/teachers/Gradebook';
+import TeacherAnalytics from './pages/teachers/TeacherAnalytics';
+import ParentCommunication from './pages/teachers/ParentCommunication';
+import CPDDashboard from './pages/teachers/CPDDashboard';
+import ClassWorkspace from './pages/teachers/ClassWorkspace';
+import Classwork from './pages/teachers/Classwork';
 import PrivateRoute from './components/PrivateRoute';
 
 const queryClient = new QueryClient();
@@ -47,7 +55,7 @@ function App() {
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <AuthProvider>
-          <Router>
+          <Router future={{ v7_startTransition: true }}>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route
@@ -183,6 +191,200 @@ function App() {
                 element={
                   <PrivateRoute>
                     <PlatformAnalytics />
+                  </PrivateRoute>
+                }
+              />
+              {/* School Admin Routes */}
+              <Route
+                path="/schooladmin/dashboard"
+                element={
+                  <PrivateRoute>
+                    <ExecutiveDashboard />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/profile"
+                element={
+                  <PrivateRoute>
+                    <SchoolProfile />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/admissions"
+                element={
+                  <PrivateRoute>
+                    <AdmissionsPipeline />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/students"
+                element={
+                  <PrivateRoute>
+                    <StudentRecords />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/timetable"
+                element={
+                  <PrivateRoute>
+                    <TimetableManagement />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/attendance"
+                element={
+                  <PrivateRoute>
+                    <AttendanceIntelligence />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/exams"
+                element={
+                  <PrivateRoute>
+                    <ExamLifecycle />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/finance"
+                element={
+                  <PrivateRoute>
+                    <FinanceFees />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/staff"
+                element={
+                  <PrivateRoute>
+                    <StaffHCM />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/communications"
+                element={
+                  <PrivateRoute>
+                    <CommunicationHub />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/reports"
+                element={
+                  <PrivateRoute>
+                    <ReportsAnalytics />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/exports"
+                element={
+                  <PrivateRoute>
+                    <MinistryExports />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/schooladmin/ministry"
+                element={
+                  <PrivateRoute>
+                    <MinistryExports />
+                  </PrivateRoute>
+                }
+              />
+              {/* Teacher Routes */}
+              <Route
+                path="/teacher/dashboard"
+                element={
+                  <PrivateRoute>
+                    <TeacherDashboard />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/teacher/classes"
+                element={
+                  <PrivateRoute>
+                    <MyClasses />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/teacher/lesson-planner"
+                element={
+                  <PrivateRoute>
+                    <LessonPlanner />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/teacher/attendance"
+                element={
+                  <PrivateRoute>
+                    <AttendanceManagement />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/teacher/assignments"
+                element={
+                  <PrivateRoute>
+                    <Classwork />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/teacher/classwork"
+                element={
+                  <PrivateRoute>
+                    <Classwork />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/teacher/gradebook"
+                element={
+                  <PrivateRoute>
+                    <Gradebook />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/teacher/analytics"
+                element={
+                  <PrivateRoute>
+                    <TeacherAnalytics />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/teacher/parents"
+                element={
+                  <PrivateRoute>
+                    <ParentCommunication />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/teacher/cpd"
+                element={
+                  <PrivateRoute>
+                    <CPDDashboard />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/teacher/classes/:classId"
+                element={
+                  <PrivateRoute>
+                    <ClassWorkspace />
                   </PrivateRoute>
                 }
               />

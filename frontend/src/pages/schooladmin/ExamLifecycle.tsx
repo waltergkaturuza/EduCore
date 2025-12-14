@@ -78,6 +78,8 @@ const ExamLifecycle: React.FC = () => {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [moderationDialogOpen, setModerationDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [tabValue, setTabValue] = useState(0);
   const queryClient = useQueryClient();
 
   const { data: cyclesData, isLoading } = useQuery({
@@ -118,6 +120,25 @@ const ExamLifecycle: React.FC = () => {
     }
   };
 
+  const handleEdit = (cycle: ExamCycle) => {
+    setSelectedCycle(cycle);
+    setEditDialogOpen(true);
+  };
+
+  const sendNotificationMutation = useMutation({
+    mutationFn: (id: number) => {
+      // TODO: Implement send notification API call
+      return Promise.resolve({ success: true });
+    },
+    onSuccess: () => {
+      // Show success message
+    },
+  });
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
   if (isLoading) {
     return (
       <Layout>
@@ -151,68 +172,117 @@ const ExamLifecycle: React.FC = () => {
           </Button>
         </Box>
 
-        {/* Exam Cycles */}
-        <Grid container spacing={3}>
-          {cycles.map((cycle: ExamCycle) => (
-            <Grid item xs={12} md={6} lg={4} key={cycle.id}>
-              <Card sx={{ borderRadius: 3, boxShadow: 3, border: cycle.is_locked ? '2px solid' : 'none', borderColor: cycle.is_locked ? 'error.main' : 'transparent' }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
-                    <Box>
-                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {cycle.name}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {cycle.term_name} - {cycle.academic_year_name}
-                      </Typography>
-                    </Box>
-                    {cycle.is_locked && (
-                      <Chip icon={<LockIcon />} label="Locked" color="error" size="small" />
-                    )}
-                  </Box>
-                  <Box sx={{ mb: 2 }}>
-                    <Chip
-                      label={EXAM_STAGE_LABELS[cycle.status] || cycle.status}
-                      size="small"
-                      color={
-                        cycle.status === 'published' ? 'success' :
-                        cycle.status === 'locked' ? 'error' :
-                        cycle.status === 'moderation' ? 'warning' : 'default'
-                      }
-                      sx={{ mr: 1 }}
-                    />
-                    <Chip label={cycle.exam_type} size="small" variant="outlined" />
-                  </Box>
-                  {cycle.moderation_required && (
-                    <Alert severity={cycle.moderation_status === 'approved' ? 'success' : 'warning'} sx={{ mb: 2 }}>
-                      Moderation: {cycle.moderation_status}
-                    </Alert>
-                  )}
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Button size="small" startIcon={<VisibilityIcon />} onClick={() => handleViewCycle(cycle)}>
-                      View
-                    </Button>
-                    {!cycle.is_locked ? (
-                      <Button size="small" startIcon={<LockIcon />} onClick={() => handleLock(cycle.id)} color="error">
-                        Lock
-                      </Button>
-                    ) : (
-                      <Button size="small" startIcon={<LockOpenIcon />} onClick={() => handleUnlock(cycle.id)}>
-                        Unlock
-                      </Button>
-                    )}
-                    {cycle.moderation_required && cycle.moderation_status !== 'approved' && (
-                      <Button size="small" startIcon={<CheckCircleIcon />} onClick={() => { setSelectedCycle(cycle); setModerationDialogOpen(true); }}>
-                        Moderate
-                      </Button>
-                    )}
-                    <Button size="small" startIcon={<DownloadIcon />}>Export</Button>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+        {/* Tabs for filtering exam cycles */}
+        <Paper sx={{ mb: 3, borderRadius: 2 }}>
+          <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+            <Tab label="All Cycles" />
+            <Tab label="Active" />
+            <Tab label="Locked" />
+            <Tab label="Moderation Required" />
+          </Tabs>
+
+          <Box sx={{ p: 3 }}>
+            {/* Filtered cycles based on tab */}
+            {(() => {
+              let filteredCycles = cycles;
+              if (tabValue === 1) {
+                filteredCycles = cycles.filter((c: ExamCycle) => c.status === 'in_progress' || c.status === 'marking');
+              } else if (tabValue === 2) {
+                filteredCycles = cycles.filter((c: ExamCycle) => c.is_locked);
+              } else if (tabValue === 3) {
+                filteredCycles = cycles.filter((c: ExamCycle) => c.moderation_required && c.moderation_status !== 'approved');
+              }
+
+              return filteredCycles.length === 0 ? (
+                <Alert severity="info">No exam cycles found for this filter.</Alert>
+              ) : (
+                <Grid container spacing={3}>
+                  {filteredCycles.map((cycle: ExamCycle) => (
+                    <Grid item xs={12} md={6} lg={4} key={cycle.id}>
+                      <Card sx={{ borderRadius: 3, boxShadow: 3, border: cycle.is_locked ? '2px solid' : 'none', borderColor: cycle.is_locked ? 'error.main' : 'transparent' }}>
+                        <CardContent>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
+                            <Box>
+                              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                {cycle.name}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                {cycle.term_name} - {cycle.academic_year_name}
+                              </Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                              <IconButton size="small" onClick={() => handleEdit(cycle)} title="Edit">
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                              {cycle.moderation_required && cycle.moderation_status !== 'approved' && (
+                                <IconButton 
+                                  size="small" 
+                                  onClick={() => sendNotificationMutation.mutate(cycle.id)}
+                                  title="Send notification"
+                                  color="primary"
+                                >
+                                  <SendIcon fontSize="small" />
+                                </IconButton>
+                              )}
+                              {cycle.is_locked && (
+                                <Chip icon={<LockIcon />} label="Locked" color="error" size="small" />
+                              )}
+                            </Box>
+                          </Box>
+                          <Box sx={{ mb: 2 }}>
+                            <Chip
+                              label={EXAM_STAGE_LABELS[cycle.status] || cycle.status}
+                              size="small"
+                              {...(cycle.status === 'moderation' || cycle.moderation_required
+                                ? { icon: <WarningIcon sx={{ fontSize: 14 }} /> }
+                                : {})}
+                              color={
+                                cycle.status === 'published' ? 'success' :
+                                cycle.status === 'locked' ? 'error' :
+                                cycle.status === 'moderation' ? 'warning' : 'default'
+                              }
+                              sx={{ mr: 1 }}
+                            />
+                            <Chip label={cycle.exam_type} size="small" variant="outlined" />
+                          </Box>
+                          {cycle.moderation_required && (
+                            <Alert 
+                              severity={cycle.moderation_status === 'approved' ? 'success' : 'warning'} 
+                              sx={{ mb: 2 }}
+                              icon={cycle.moderation_status !== 'approved' ? <WarningIcon /> : undefined}
+                            >
+                              Moderation: {cycle.moderation_status}
+                            </Alert>
+                          )}
+                          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                            <Button size="small" startIcon={<VisibilityIcon />} onClick={() => handleViewCycle(cycle)}>
+                              View
+                            </Button>
+                            {!cycle.is_locked ? (
+                              <Button size="small" startIcon={<LockIcon />} onClick={() => handleLock(cycle.id)} color="error">
+                                Lock
+                              </Button>
+                            ) : (
+                              <Button size="small" startIcon={<LockOpenIcon />} onClick={() => handleUnlock(cycle.id)}>
+                                Unlock
+                              </Button>
+                            )}
+                            {cycle.moderation_required && cycle.moderation_status !== 'approved' && (
+                              <Button size="small" startIcon={<CheckCircleIcon />} onClick={() => { setSelectedCycle(cycle); setModerationDialogOpen(true); }}>
+                                Moderate
+                              </Button>
+                            )}
+                            <Button size="small" startIcon={<DownloadIcon />}>Export</Button>
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
+              );
+            })()}
+          </Box>
+        </Paper>
 
         {/* Exam Cycle Details Dialog */}
         <Dialog open={viewDialogOpen} onClose={() => setViewDialogOpen(false)} maxWidth="lg" fullWidth>
@@ -387,12 +457,32 @@ const ExamLifecycle: React.FC = () => {
             <Button variant="contained" startIcon={<CheckCircleIcon />}>Approve All</Button>
           </DialogActions>
         </Dialog>
+
+        {/* Edit Exam Cycle Dialog */}
+        <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Edit Exam Cycle - {selectedCycle?.name}</DialogTitle>
+          <DialogContent>
+            {selectedCycle && (
+              <Box sx={{ mt: 2 }}>
+                <TextField fullWidth label="Name" defaultValue={selectedCycle.name} sx={{ mb: 2 }} />
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Edit exam cycle details. Note: Some fields may be locked if the cycle is published.
+                </Alert>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+            <Button variant="contained">Save Changes</Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     </Layout>
   );
 };
 
 export default ExamLifecycle;
+
 
 
 

@@ -20,3 +20,4 @@ class TenantSettingsAdmin(admin.ModelAdmin):
 
 
 
+

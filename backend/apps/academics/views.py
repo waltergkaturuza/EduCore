@@ -119,3 +119,4 @@ class TimetableSlotViewSet(viewsets.ModelViewSet):
 
 
 
+

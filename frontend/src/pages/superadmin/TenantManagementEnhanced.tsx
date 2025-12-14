@@ -82,15 +82,91 @@ const TenantManagementEnhanced: React.FC = () => {
   const [impersonateOpen, setImpersonateOpen] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [tabValue, setTabValue] = useState(0);
+  const [filters, setFilters] = useState<Record<string, any>>({});
+  const [searchTerm, setSearchTerm] = useState('');
   const queryClient = useQueryClient();
 
   const { data: tenants, isLoading } = useQuery({
-    queryKey: ['tenants'],
+    queryKey: ['tenants', filters, searchTerm, tabValue],
     queryFn: async () => {
-      const response = await apiService.get<PaginatedResponse<Tenant>>('/tenants/');
+      const params: any = {};
+      if (filters.plan) params.subscription_plan = filters.plan;
+      if (filters.status) params.is_active = filters.status === 'active';
+      if (filters.city) params.city = filters.city;
+      if (searchTerm) params.search = searchTerm;
+      
+      // Filter by tab
+      if (tabValue === 1) params.is_active = true;
+      else if (tabValue === 2) params.subscription_plan = 'free'; // Trial
+      else if (tabValue === 3) params.is_active = false; // Suspended
+      
+      const response = await apiService.get<PaginatedResponse<Tenant>>('/tenants/', { params });
       return response.data;
     },
   });
+
+  // Export tenants function
+  const handleExportTenants = () => {
+    if (!tenants?.results) return;
+    
+    const csvRows = [
+      ['School Name', 'Code', 'Email', 'Phone', 'City', 'Province', 'Plan', 'Status', 'Students', 'Teachers', 'Storage (GB)'].join(','),
+      ...tenants.results.map((t: Tenant) =>
+        [
+          `"${t.name}"`,
+          t.code,
+          t.email,
+          t.phone,
+          t.city,
+          t.province,
+          t.subscription_plan,
+          t.is_active ? 'Active' : 'Suspended',
+          t.student_count || 0,
+          t.teacher_count || 0,
+          t.storage_used || 0,
+        ].join(',')
+      ),
+    ];
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tenants-export-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Filter fields for AdvancedFilter
+  const filterFields: FilterField[] = [
+    {
+      name: 'plan',
+      label: 'Subscription Plan',
+      type: 'select',
+      options: [
+        { value: 'free', label: 'Free' },
+        { value: 'basic', label: 'Basic' },
+        { value: 'premium', label: 'Premium' },
+        { value: 'enterprise', label: 'Enterprise' },
+      ],
+    },
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      options: [
+        { value: 'active', label: 'Active' },
+        { value: 'suspended', label: 'Suspended' },
+      ],
+    },
+    {
+      name: 'city',
+      label: 'City',
+      type: 'text',
+    },
+  ];
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiService.delete(`/tenants/${id}/`),
@@ -166,19 +242,29 @@ const TenantManagementEnhanced: React.FC = () => {
               Manage all schools on the platform
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => handleOpen()}
-            sx={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
-              },
-            }}
-          >
-            Add School
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={<DownloadIcon />}
+              onClick={handleExportTenants}
+              sx={{ borderRadius: 2 }}
+            >
+              Export
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => handleOpen()}
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
+                },
+              }}
+            >
+              Add School
+            </Button>
+          </Box>
         </Box>
 
         {/* Quick Stats */}
@@ -260,6 +346,20 @@ const TenantManagementEnhanced: React.FC = () => {
             </Card>
           </Grid>
         </Grid>
+
+        {/* Advanced Filter */}
+        <Paper sx={{ mb: 3, p: 2, borderRadius: 2 }}>
+          <AdvancedFilter
+            fields={filterFields}
+            onFilterChange={(newFilters) => {
+              setFilters(newFilters);
+            }}
+            onSearchChange={(search) => {
+              setSearchTerm(search);
+            }}
+            searchPlaceholder="Search schools by name, code, email..."
+          />
+        </Paper>
 
         {/* Tabs */}
         <Paper sx={{ mb: 3, borderRadius: 2 }}>
@@ -379,6 +479,20 @@ const TenantManagementEnhanced: React.FC = () => {
                             }}
                           >
                             <ViewIcon />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="View School Dashboard">
+                          <IconButton
+                            size="small"
+                            onClick={() => navigate(`/superadmin/tenants/${tenant.id}`)}
+                            sx={{
+                              color: '#8b5cf6',
+                              '&:hover': {
+                                background: 'rgba(139, 92, 246, 0.1)',
+                              },
+                            }}
+                          >
+                            <PersonIcon />
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Impersonate">

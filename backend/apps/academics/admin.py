@@ -45,3 +45,4 @@ class TimetableSlotAdmin(admin.ModelAdmin):
 
 
 
+

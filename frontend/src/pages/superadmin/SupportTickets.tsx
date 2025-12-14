@@ -43,80 +43,134 @@ import {
   AttachFile as AttachFileIcon,
   Send as SendIcon,
   Close as CloseIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Layout from '../../components/Layout';
-import { superadminService } from '../../services/superadmin';
+import { superadminService, SupportTicket } from '../../services/superadmin';
 import AdvancedFilter, { FilterField } from '../../components/AdvancedFilter';
 import apiService from '../../services/api';
 import { downloadBlob } from '../../utils/exportHelpers';
 
-interface Ticket {
-  id: number;
-  ticket_number: string;
+type Ticket = Omit<SupportTicket, 'assigned_to_name' | 'assigned_to'> & {
   school_name: string;
-  subject: string;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  status: 'open' | 'in_progress' | 'resolved' | 'closed';
-  category: string;
-  assigned_to?: string;
   created_at: string;
   updated_at: string;
   last_reply: string;
-  replies_count: number;
-}
+  assigned_to?: string;
+};
 
 const SupportTickets: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [tabValue, setTabValue] = useState(0);
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filters, setFilters] = useState<Record<string, any>>({});
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // Mock data
-  const tickets: Ticket[] = [
+  // Fetch tickets from backend
+  const { data: ticketsData, isLoading: ticketsLoading, refetch: refetchTickets } = useQuery({
+    queryKey: ['supportTickets', filterStatus, filters, searchTerm],
+    queryFn: async () => {
+      const params: any = {};
+      if (filterStatus !== 'all') params.status = filterStatus;
+      if (filters.priority) params.priority = filters.priority;
+      if (filters.category) params.category = filters.category;
+      if (searchTerm) params.search = searchTerm;
+      
+      return superadminService.getSupportTickets(params);
+    },
+  });
+
+  const tickets: Ticket[] = (ticketsData?.results || []).map((ticket: SupportTicket): Ticket => ({
+    ...ticket,
+    school_name: ticket.tenant_name || 'Unknown School',
+    created_at: ticket.first_response_at || new Date().toISOString(),
+    updated_at: ticket.last_reply_at || new Date().toISOString(),
+    last_reply: ticket.last_reply_at ? `${Math.floor((Date.now() - new Date(ticket.last_reply_at).getTime()) / 3600000)} hours ago` : 'No replies',
+    assigned_to: ticket.assigned_to_name,
+  }));
+
+  // Reply mutation
+  const replyMutation = useMutation({
+    mutationFn: async ({ ticketId, message, isInternal = false }: { ticketId: number; message: string; isInternal?: boolean }) => {
+      return superadminService.replyToTicket(ticketId, message, isInternal);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supportTickets'] });
+      refetchTickets();
+      setTicketDialogOpen(false);
+    },
+  });
+
+  // Update ticket status mutation
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ ticketId, status }: { ticketId: number; status: string }) => {
+      return apiService.patch(`/superadmin/support-tickets/${ticketId}/`, { status }).then(res => res.data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supportTickets'] });
+      refetchTickets();
+      if (selectedTicket) {
+        setSelectedTicket({ ...selectedTicket, status: updateStatusMutation.variables?.status as any });
+      }
+    },
+  });
+
+  // Export tickets function
+  const handleExportTickets = () => {
+    const csvRows = [
+      ['Ticket #', 'School', 'Subject', 'Priority', 'Status', 'Category', 'Assigned To', 'Created At', 'Last Update'].join(','),
+      ...tickets.map((t) =>
+        [
+          t.ticket_number,
+          t.school_name,
+          `"${t.subject}"`,
+          t.priority,
+          t.status,
+          t.category,
+          t.assigned_to || 'Unassigned',
+          t.created_at,
+          t.updated_at,
+        ].join(',')
+      ),
+    ];
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    downloadBlob(blob, `support-tickets-${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
+  // Filter fields for AdvancedFilter
+  const filterFields: FilterField[] = [
     {
-      id: 1,
-      ticket_number: 'TKT-2024-001',
-      school_name: 'Greenwood High',
-      subject: 'Payment gateway not working',
-      priority: 'urgent',
-      status: 'open',
-      category: 'Billing',
-      assigned_to: 'John Doe',
-      created_at: '2024-06-15 10:30',
-      updated_at: '2024-06-15 14:20',
-      last_reply: '2 hours ago',
-      replies_count: 3,
+      name: 'priority',
+      label: 'Priority',
+      type: 'select',
+      options: [
+        { value: 'low', label: 'Low' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'high', label: 'High' },
+        { value: 'urgent', label: 'Urgent' },
+      ],
     },
     {
-      id: 2,
-      ticket_number: 'TKT-2024-002',
-      school_name: 'Riverside Academy',
-      subject: 'Unable to export student reports',
-      priority: 'high',
-      status: 'in_progress',
-      category: 'Technical',
-      assigned_to: 'Jane Smith',
-      created_at: '2024-06-14 09:15',
-      updated_at: '2024-06-15 16:45',
-      last_reply: '1 hour ago',
-      replies_count: 5,
+      name: 'category',
+      label: 'Category',
+      type: 'select',
+      options: [
+        { value: 'Technical', label: 'Technical' },
+        { value: 'Billing', label: 'Billing' },
+        { value: 'Feature Request', label: 'Feature Request' },
+        { value: 'Other', label: 'Other' },
+      ],
     },
     {
-      id: 3,
-      ticket_number: 'TKT-2024-003',
-      school_name: 'Sunset Primary',
-      subject: 'Feature request: Bulk SMS',
-      priority: 'low',
-      status: 'resolved',
-      category: 'Feature Request',
-      assigned_to: 'Mike Johnson',
-      created_at: '2024-06-10 11:00',
-      updated_at: '2024-06-12 15:30',
-      last_reply: '2 days ago',
-      replies_count: 2,
+      name: 'school',
+      label: 'School Name',
+      type: 'text',
     },
   ];
 
@@ -163,9 +217,7 @@ const SupportTickets: React.FC = () => {
     setTicketDialogOpen(true);
   };
 
-  const filteredTickets = filterStatus === 'all' 
-    ? tickets 
-    : tickets.filter(t => t.status === filterStatus);
+  const filteredTickets = tickets;
 
   return (
     <Layout>
@@ -179,18 +231,29 @@ const SupportTickets: React.FC = () => {
               Manage and track support requests from all schools
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            sx={{
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
-              },
-            }}
-          >
-            New Ticket
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={<DownloadIcon />}
+              onClick={handleExportTickets}
+              sx={{ borderRadius: 2 }}
+            >
+              Export
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => navigate('/superadmin/support-tickets/new')}
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
+                },
+              }}
+            >
+              New Ticket
+            </Button>
+          </Box>
         </Box>
 
         {/* Stats Cards */}
@@ -273,13 +336,58 @@ const SupportTickets: React.FC = () => {
           </Grid>
         </Grid>
 
+        {/* Advanced Filter */}
+        <Paper sx={{ mb: 3, p: 2, borderRadius: 2 }}>
+          <AdvancedFilter
+            fields={filterFields}
+            onFilterChange={(newFilters) => {
+              setFilters(newFilters);
+            }}
+            onSearchChange={(search) => {
+              setSearchTerm(search);
+            }}
+            searchPlaceholder="Search tickets by subject, school..."
+          />
+        </Paper>
+
         {/* Tabs */}
         <Paper sx={{ mb: 3, borderRadius: 2 }}>
-          <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
-            <Tab label="All Tickets" />
-            <Tab label="Open" />
-            <Tab label="In Progress" />
-            <Tab label="Resolved" />
+          <Tabs 
+            value={tabValue} 
+            onChange={(e, v) => {
+              setTabValue(v);
+              const statusMap = ['all', 'open', 'in_progress', 'resolved'];
+              setFilterStatus(statusMap[v] || 'all');
+            }}
+          >
+            <Tab 
+              label={
+                <Badge badgeContent={stats.total} color="primary" sx={{ '& .MuiBadge-badge': { right: -8, top: 4 } }}>
+                  All Tickets
+                </Badge>
+              } 
+            />
+            <Tab 
+              label={
+                <Badge badgeContent={stats.open} color="error" sx={{ '& .MuiBadge-badge': { right: -8, top: 4 } }}>
+                  Open
+                </Badge>
+              } 
+            />
+            <Tab 
+              label={
+                <Badge badgeContent={stats.inProgress} color="warning" sx={{ '& .MuiBadge-badge': { right: -8, top: 4 } }}>
+                  In Progress
+                </Badge>
+              } 
+            />
+            <Tab 
+              label={
+                <Badge badgeContent={stats.resolved} color="success" sx={{ '& .MuiBadge-badge': { right: -8, top: 4 } }}>
+                  Resolved
+                </Badge>
+              } 
+            />
           </Tabs>
         </Paper>
 
@@ -300,7 +408,16 @@ const SupportTickets: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredTickets.map((ticket) => (
+              {ticketsLoading ? (
+                <TableRow>
+                  <TableCell colSpan={9} align="center">Loading tickets...</TableCell>
+                </TableRow>
+              ) : filteredTickets.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} align="center">No tickets found</TableCell>
+                </TableRow>
+              ) : (
+                filteredTickets.map((ticket) => (
                 <TableRow
                   key={ticket.id}
                   sx={{
@@ -343,7 +460,7 @@ const SupportTickets: React.FC = () => {
                     {ticket.assigned_to ? (
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Avatar sx={{ width: 24, height: 24, fontSize: 12 }}>
-                          {ticket.assigned_to[0]}
+                          <PersonIcon sx={{ fontSize: 16 }} />
                         </Avatar>
                         <Typography variant="body2">{ticket.assigned_to}</Typography>
                       </Box>
@@ -369,7 +486,8 @@ const SupportTickets: React.FC = () => {
                     </IconButton>
                   </TableCell>
                 </TableRow>
-              ))}
+                ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -448,11 +566,11 @@ const SupportTickets: React.FC = () => {
                 <Box sx={{ mb: 2 }}>
                   <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
                     <Avatar sx={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-                      {selectedTicket.school_name[0]}
+                      {(selectedTicket.school_name || selectedTicket.tenant_name || 'U')[0]}
                     </Avatar>
                     <Box sx={{ flex: 1, background: '#f8fafc', p: 2, borderRadius: 2 }}>
                       <Typography variant="body2" sx={{ fontWeight: 500, mb: 1 }}>
-                        {selectedTicket.school_name}
+                        {selectedTicket.school_name || selectedTicket.tenant_name || 'Unknown School'}
                       </Typography>
                       <Typography variant="body2">
                         Initial ticket description would appear here...
@@ -471,6 +589,7 @@ const SupportTickets: React.FC = () => {
                     multiline
                     rows={4}
                     placeholder="Type your reply..."
+                    id="reply-message"
                     sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -480,6 +599,17 @@ const SupportTickets: React.FC = () => {
                     <Button
                       variant="contained"
                       startIcon={<SendIcon />}
+                      onClick={() => {
+                        const messageInput = document.getElementById('reply-message') as HTMLInputElement;
+                        if (messageInput && selectedTicket && messageInput.value.trim()) {
+                          replyMutation.mutate({
+                            ticketId: selectedTicket.id,
+                            message: messageInput.value,
+                          });
+                          messageInput.value = '';
+                        }
+                      }}
+                      disabled={replyMutation.isPending}
                       sx={{
                         borderRadius: 2,
                         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -488,7 +618,7 @@ const SupportTickets: React.FC = () => {
                         },
                       }}
                     >
-                      Send Reply
+                      {replyMutation.isPending ? 'Sending...' : 'Send Reply'}
                     </Button>
                   </Box>
                 </Box>
@@ -498,7 +628,18 @@ const SupportTickets: React.FC = () => {
           <DialogActions sx={{ p: 3, pt: 2 }}>
             <FormControl size="small" sx={{ minWidth: 150, mr: 'auto' }}>
               <InputLabel>Change Status</InputLabel>
-              <Select value={selectedTicket?.status || ''} label="Change Status">
+              <Select 
+                value={selectedTicket?.status || ''} 
+                label="Change Status"
+                onChange={(e) => {
+                  if (selectedTicket) {
+                    updateStatusMutation.mutate({
+                      ticketId: selectedTicket.id,
+                      status: e.target.value,
+                    });
+                  }
+                }}
+              >
                 <MenuItem value="open">Open</MenuItem>
                 <MenuItem value="in_progress">In Progress</MenuItem>
                 <MenuItem value="resolved">Resolved</MenuItem>

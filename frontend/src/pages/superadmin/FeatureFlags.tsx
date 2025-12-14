@@ -29,6 +29,8 @@ import {
   FormControlLabel,
   IconButton,
   Tooltip,
+  LinearProgress,
+  Alert,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -42,6 +44,7 @@ import {
 import Layout from '../../components/Layout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { superadminService } from '../../services/superadmin';
+import apiService from '../../services/api';
 
 interface Module {
   id: number;
@@ -75,18 +78,20 @@ const FeatureFlags: React.FC = () => {
   });
   const featureFlags: FeatureFlag[] = featureFlagsData?.results || [];
 
-  // Fetch modules (if available - may need to add getModules to superadminService)
-  // For now, using placeholder data
-  const modules: Module[] = [
-    {
-      id: 1,
-      name: 'Learning Management System (LMS)',
-      description: 'Online courses, assignments, and learning materials',
-      is_enabled_globally: true,
-      enabled_for_tenants: [1, 2, 3, 4, 5],
-      total_tenants: featureFlags.length > 0 ? 45 : 0,
+  // Fetch modules from backend
+  const { data: modulesData, isLoading: modulesLoading } = useQuery<{ results: Module[] }>({
+    queryKey: ['modules'],
+    queryFn: async () => {
+      try {
+        const response = await apiService.get<{ results: Module[] }>('/superadmin/modules/');
+        return response.data;
+      } catch (error) {
+        // If endpoint doesn't exist yet, return empty array
+        return { results: [] };
+      }
     },
-  ];
+  });
+  const modules: Module[] = modulesData?.results || [];
 
   // Toggle feature flag mutation
   const toggleFeatureFlagMutation = useMutation({
@@ -106,19 +111,44 @@ const FeatureFlags: React.FC = () => {
     toggleFeatureFlagMutation.mutate({ id: flag.id, isEnabled: flag.is_enabled });
   };
 
+  const deleteFeatureFlagMutation = useMutation({
+    mutationFn: async (id: number) => {
+      // Delete feature flag - implement API call when available
+      return apiService.delete(`/superadmin/feature-flags/${id}/`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['featureFlags'] });
+      refetchFeatureFlags();
+    },
+  });
+
+  const handleDeleteFlag = (id: number) => {
+    if (window.confirm('Are you sure you want to delete this feature flag? This action cannot be undone.')) {
+      deleteFeatureFlagMutation.mutate(id);
+    }
+  };
+
   return (
     <Layout>
       <Container maxWidth="xl">
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
           <Box>
-            <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 1, color: '#1e293b' }}>
-              Feature Flags & Module Management
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <SettingsIcon sx={{ color: 'primary.main' }} />
+              <Typography variant="h4" component="h1" sx={{ fontWeight: 700, color: '#1e293b' }}>
+                Feature Flags & Module Management
+              </Typography>
+            </Box>
             <Typography variant="body1" color="text.secondary">
               Control which features and modules are available to schools
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
+            <Tooltip title="Refresh feature flags">
+              <IconButton onClick={() => refetchFeatureFlags()} color="primary">
+                <SettingsIcon />
+              </IconButton>
+            </Tooltip>
             <Button
               variant="outlined"
               startIcon={<AddIcon />}
@@ -149,13 +179,13 @@ const FeatureFlags: React.FC = () => {
           <Typography variant="h5" sx={{ fontWeight: 600, mb: 3 }}>
             Modules
           </Typography>
-          <Grid container spacing={3}>
-            {modules.length === 0 ? (
-              <Grid item xs={12}>
-                <Typography>No modules configured</Typography>
-              </Grid>
-            ) : (
-              modules.map((module) => (
+          {modulesLoading ? (
+            <LinearProgress sx={{ mb: 3 }} />
+          ) : modules.length === 0 ? (
+            <Alert severity="info">No modules configured</Alert>
+          ) : (
+            <Grid container spacing={3}>
+              {modules.map((module) => (
                 <Grid item xs={12} md={6} key={module.id}>
                 <Card>
                   <CardContent>
@@ -179,11 +209,20 @@ const FeatureFlags: React.FC = () => {
                           </Typography>
                         </Box>
                       </Box>
-                      <Switch
-                        checked={module.is_enabled_globally}
-                        onChange={() => handleToggleModule(module)}
-                        color="success"
-                      />
+                      <Tooltip title={module.is_enabled_globally ? 'Disable globally' : 'Enable globally'}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          {module.is_enabled_globally ? (
+                            <ToggleOnIcon sx={{ color: 'success.main', fontSize: 32 }} />
+                          ) : (
+                            <ToggleOffIcon sx={{ color: 'text.disabled', fontSize: 32 }} />
+                          )}
+                          <Switch
+                            checked={module.is_enabled_globally}
+                            onChange={() => handleToggleModule(module)}
+                            color="success"
+                          />
+                        </Box>
+                      </Tooltip>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
                       <Button
@@ -210,9 +249,9 @@ const FeatureFlags: React.FC = () => {
                   </CardContent>
                 </Card>
                 </Grid>
-              ))
-            )}
-          </Grid>
+              ))}
+            </Grid>
+          )}
         </Box>
 
         {/* Feature Flags Section */}
@@ -275,14 +314,28 @@ const FeatureFlags: React.FC = () => {
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          setFlagDialogOpen(true);
-                        }}
-                      >
-                        <EditIcon />
-                      </IconButton>
+                      <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+                        <Tooltip title="Edit feature flag">
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              setFlagDialogOpen(true);
+                            }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete feature flag">
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleDeleteFlag(flag.id)}
+                            disabled={deleteFeatureFlagMutation.isPending}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
                     </TableCell>
                     </TableRow>
                   ))

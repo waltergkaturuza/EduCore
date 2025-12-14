@@ -38,6 +38,7 @@ import {
   Close as CloseIcon,
   CloudQueue as CloudQueueIcon,
   Description as DescriptionIcon,
+  Assessment as AssessmentIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -56,8 +57,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 
-  const getMenuItems = () => {
-    if (user?.role === 'superadmin') {
+  const getMenuItems = (): Array<{ text: string; icon: React.ReactNode; path: string; roles?: string[] }> => {
+    const userRole = user?.role?.toLowerCase();
+    
+    if (userRole === 'superadmin') {
       return [
         { text: 'Platform Dashboard', icon: <DashboardIcon />, path: '/superadmin' },
         { text: 'School Management', icon: <BusinessIcon />, path: '/superadmin/tenants' },
@@ -71,7 +74,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
     
     // School Admin menu
-    if (user?.role === 'admin') {
+    if (userRole === 'admin') {
       return [
         { text: 'Command Dashboard', icon: <DashboardIcon />, path: '/schooladmin/dashboard' },
         { text: 'School Profile', icon: <SchoolIcon />, path: '/schooladmin/profile' },
@@ -85,6 +88,21 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         { text: 'Communications', icon: <MessageIcon />, path: '/schooladmin/communications' },
         { text: 'Reports & Analytics', icon: <TrendingUpIcon />, path: '/schooladmin/reports' },
         { text: 'Ministry Exports', icon: <DescriptionIcon />, path: '/schooladmin/ministry' },
+      ];
+    }
+    
+    // Teacher menu
+    if (userRole === 'teacher') {
+      return [
+        { text: 'Dashboard', icon: <DashboardIcon />, path: '/teacher/dashboard' },
+        { text: 'My Classes', icon: <SchoolIcon />, path: '/teacher/classes' },
+        { text: 'Classwork', icon: <AssignmentIcon />, path: '/teacher/classwork' },
+        { text: 'Lesson Planner', icon: <BookIcon />, path: '/teacher/lesson-planner' },
+        { text: 'Attendance', icon: <AttendanceIcon />, path: '/teacher/attendance' },
+        { text: 'Gradebook', icon: <AssessmentIcon />, path: '/teacher/gradebook' },
+        { text: 'Analytics', icon: <TrendingUpIcon />, path: '/teacher/analytics' },
+        { text: 'Parents', icon: <MessageIcon />, path: '/teacher/parents' },
+        { text: 'CPD', icon: <DescriptionIcon />, path: '/teacher/cpd' },
       ];
     }
     
@@ -103,12 +121,24 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const menuItems = getMenuItems();
 
+  // For role-specific menus (superadmin, admin, teacher), don't filter - they're already filtered by getMenuItems()
+  // Only filter the default menu items that have roles property
   const filteredMenuItems = menuItems.filter((item) => {
+    // If item has roles property, filter by role
     if (item.roles) {
       return item.roles.includes(user?.role || '');
     }
+    // If no roles property, include it (role-specific menus already filtered)
     return true;
   });
+  
+  // Debug logging (commented out to reduce console noise)
+  // Uncomment only when debugging navigation issues
+  // if (process.env.NODE_ENV === 'development') {
+  //   console.log('[Layout] User role:', user?.role);
+  //   console.log('[Layout] Menu items count:', menuItems.length);
+  //   console.log('[Layout] Filtered menu items count:', filteredMenuItems.length);
+  // }
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -145,10 +175,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           display: 'flex',
           alignItems: 'center',
           gap: 2,
+          position: 'relative',
         }}
       >
         <SchoolIcon sx={{ fontSize: 32 }} />
-        <Box>
+        <Box sx={{ flex: 1 }}>
           <Typography variant="h6" sx={{ fontWeight: 700 }}>
             EduCore
           </Typography>
@@ -156,6 +187,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             School Management
           </Typography>
         </Box>
+        <Button
+          onClick={handleDrawerToggle}
+          sx={{
+            display: { xs: 'flex', md: 'none' },
+            color: 'white',
+            minWidth: 'auto',
+            p: 0.5,
+          }}
+        >
+          <CloseIcon />
+        </Button>
       </Box>
       <Divider />
       <List sx={{ flex: 1, pt: 2 }}>

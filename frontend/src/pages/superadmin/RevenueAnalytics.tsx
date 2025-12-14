@@ -149,15 +149,28 @@ const RevenueAnalytics: React.FC = () => {
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel>Time Range</InputLabel>
-              <Select value={timeRange} label="Time Range" onChange={(e) => setTimeRange(e.target.value)}>
-                <MenuItem value="1month">Last Month</MenuItem>
-                <MenuItem value="3months">Last 3 Months</MenuItem>
-                <MenuItem value="6months">Last 6 Months</MenuItem>
-                <MenuItem value="1year">Last Year</MenuItem>
-              </Select>
-            </FormControl>
+            <Paper sx={{ p: 1, borderRadius: 2 }}>
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                <FormControl size="small" sx={{ minWidth: 150 }}>
+                  <InputLabel>Time Range</InputLabel>
+                  <Select value={timeRange} label="Time Range" onChange={(e) => setTimeRange(e.target.value)}>
+                    <MenuItem value="1month">Last Month</MenuItem>
+                    <MenuItem value="3months">Last 3 Months</MenuItem>
+                    <MenuItem value="6months">Last 6 Months</MenuItem>
+                    <MenuItem value="1year">Last Year</MenuItem>
+                  </Select>
+                </FormControl>
+                <FormControl size="small" sx={{ minWidth: 150 }}>
+                  <InputLabel>Metric</InputLabel>
+                  <Select value={metric} label="Metric" onChange={(e) => setMetric(e.target.value)}>
+                    <MenuItem value="revenue">Revenue</MenuItem>
+                    <MenuItem value="mrr">MRR</MenuItem>
+                    <MenuItem value="arr">ARR</MenuItem>
+                    <MenuItem value="churn">Churn</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+            </Paper>
             <Button
               variant="outlined"
               startIcon={<DownloadIcon />}
@@ -283,12 +296,21 @@ const RevenueAnalytics: React.FC = () => {
           <Grid item xs={12} sm={6} md={3}>
             <Card>
               <CardContent>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: '#10b981' }}>
-                  {metrics.conversionRate}%
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                  <PaymentIcon sx={{ color: '#10b981', fontSize: 24 }} />
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#10b981' }}>
+                    {metrics.conversionRate}%
+                  </Typography>
+                </Box>
                 <Typography variant="body2" color="text.secondary">
                   Trial → Paid Conversion
                 </Typography>
+                <Chip 
+                  label={metric === 'revenue' ? 'Revenue' : metric === 'mrr' ? 'MRR' : metric === 'arr' ? 'ARR' : 'Churn'} 
+                  size="small" 
+                  sx={{ mt: 1 }}
+                  color="primary"
+                />
               </CardContent>
             </Card>
           </Grid>

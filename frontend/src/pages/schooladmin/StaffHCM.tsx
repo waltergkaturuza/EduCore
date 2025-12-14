@@ -33,6 +33,7 @@ import {
   FormControl,
   InputLabel,
   Rating,
+  Alert,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -52,6 +53,25 @@ const StaffHCM: React.FC = () => {
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [createStaffDialogOpen, setCreateStaffDialogOpen] = useState(false);
+  const [staffForm, setStaffForm] = useState({
+    user: null as number | null,
+    employee_number: '',
+    department: '',
+    position: '',
+    employment_type: 'full_time',
+    hire_date: '',
+    salary: '',
+    qualifications: '',
+    certifications: '',
+  });
+  const [leaveForm, setLeaveForm] = useState({
+    staff: null as number | null,
+    leave_type: 'annual',
+    start_date: '',
+    end_date: '',
+    reason: '',
+  });
   const queryClient = useQueryClient();
 
   const { data: staffData, isLoading } = useQuery({
@@ -69,9 +89,15 @@ const StaffHCM: React.FC = () => {
     queryFn: () => apiService.get('/schooladmin/leave-requests/').then(res => res.data),
   });
 
+  const { data: usersData } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => apiService.get('/users/').then(res => res.data),
+  });
+
   const staff = (staffData as any)?.results || [];
   const appraisals = (appraisalsData as any)?.results || [];
   const leaveRequests = (leaveRequestsData as any)?.results || [];
+  const users = (usersData as any)?.results || [];
 
   const approveLeaveMutation = useMutation({
     mutationFn: (id: number) => apiService.post(`/schooladmin/leave-requests/${id}/approve/`),
@@ -91,6 +117,48 @@ const StaffHCM: React.FC = () => {
   const handleViewStaff = (staffMember: any) => {
     setSelectedStaff(staffMember);
     setViewDialogOpen(true);
+  };
+
+  const createStaffMutation = useMutation({
+    mutationFn: (data: any) => apiService.post('/schooladmin/staff-records/', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['staffRecords'] });
+      setCreateStaffDialogOpen(false);
+      setStaffForm({
+        user: null,
+        employee_number: '',
+        department: '',
+        position: '',
+        employment_type: 'full_time',
+        hire_date: '',
+        salary: '',
+        qualifications: '',
+        certifications: '',
+      });
+    },
+  });
+
+  const createLeaveRequestMutation = useMutation({
+    mutationFn: (data: any) => apiService.post('/schooladmin/leave-requests/', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leaveRequests'] });
+      setLeaveDialogOpen(false);
+      setLeaveForm({
+        staff: null,
+        leave_type: 'annual',
+        start_date: '',
+        end_date: '',
+        reason: '',
+      });
+    },
+  });
+
+  const handleCreateStaff = () => {
+    createStaffMutation.mutate(staffForm);
+  };
+
+  const handleCreateLeaveRequest = () => {
+    createLeaveRequestMutation.mutate(leaveForm);
   };
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -120,7 +188,12 @@ const StaffHCM: React.FC = () => {
               Comprehensive staff records, appraisals, and leave management
             </Typography>
           </Box>
-          <Button variant="contained" startIcon={<AddIcon />} sx={{ borderRadius: 2 }}>
+          <Button 
+            variant="contained" 
+            startIcon={<AddIcon />} 
+            onClick={() => setCreateStaffDialogOpen(true)}
+            sx={{ borderRadius: 2 }}
+          >
             Add Staff Member
           </Button>
         </Box>
@@ -168,10 +241,10 @@ const StaffHCM: React.FC = () => {
                         </TableCell>
                         <TableCell>{staffMember.hire_date}</TableCell>
                         <TableCell>
-                          <IconButton size="small" onClick={() => handleViewStaff(staffMember)}>
+                          <IconButton size="small" onClick={() => handleViewStaff(staffMember)} title="View Details">
                             <VisibilityIcon />
                           </IconButton>
-                          <IconButton size="small">
+                          <IconButton size="small" title="Edit Staff">
                             <EditIcon />
                           </IconButton>
                         </TableCell>
@@ -185,26 +258,34 @@ const StaffHCM: React.FC = () => {
             {/* Appraisals Tab */}
             {tabValue === 1 && (
               <Grid container spacing={3}>
-                {appraisals.map((appraisal: any) => (
-                  <Grid item xs={12} md={6} key={appraisal.id}>
-                    <Card sx={{ borderRadius: 3, boxShadow: 3 }}>
-                      <CardContent>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
-                          <Box>
-                            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                              {appraisal.staff_name}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              {appraisal.appraisal_period}
-                            </Typography>
+                {appraisals.length === 0 ? (
+                  <Grid item xs={12}>
+                    <Alert severity="info">No staff appraisals found.</Alert>
+                  </Grid>
+                ) : (
+                  appraisals.map((appraisal: any) => (
+                    <Grid item xs={12} md={6} key={appraisal.id}>
+                      <Card sx={{ borderRadius: 3, boxShadow: 3 }}>
+                        <CardContent>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
+                            <Box>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                <AssessmentIcon sx={{ fontSize: 20, color: 'primary.main' }} />
+                                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                                  {appraisal.staff_name}
+                                </Typography>
+                              </Box>
+                              <Typography variant="body2" color="text.secondary">
+                                {appraisal.appraisal_period}
+                              </Typography>
+                            </Box>
+                            {appraisal.overall_score && (
+                              <Chip
+                                label={`${appraisal.overall_score.toFixed(1)}/100`}
+                                color={appraisal.overall_score >= 80 ? 'success' : appraisal.overall_score >= 60 ? 'warning' : 'error'}
+                              />
+                            )}
                           </Box>
-                          {appraisal.overall_score && (
-                            <Chip
-                              label={`${appraisal.overall_score.toFixed(1)}/100`}
-                              color={appraisal.overall_score >= 80 ? 'success' : appraisal.overall_score >= 60 ? 'warning' : 'error'}
-                            />
-                          )}
-                        </Box>
                         <Grid container spacing={2} sx={{ mb: 2 }}>
                           <Grid item xs={6}>
                             <Typography variant="caption" color="text.secondary">Attendance</Typography>
@@ -227,13 +308,34 @@ const StaffHCM: React.FC = () => {
                       </CardContent>
                     </Card>
                   </Grid>
-                ))}
+                  ))
+                )}
               </Grid>
             )}
 
             {/* Leave Requests Tab */}
             {tabValue === 2 && (
-              <TableContainer>
+              <Box>
+                <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <EventIcon sx={{ color: 'primary.main' }} />
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      Leave Management
+                    </Typography>
+                  </Box>
+                  <Button 
+                    variant="contained" 
+                    startIcon={<AddIcon />}
+                    onClick={() => setLeaveDialogOpen(true)}
+                    sx={{ borderRadius: 2 }}
+                  >
+                    New Leave Request
+                  </Button>
+                </Box>
+                {leaveRequests.length === 0 ? (
+                  <Alert severity="info">No leave requests found.</Alert>
+                ) : (
+                  <TableContainer>
                 <Table>
                   <TableHead>
                     <TableRow>
@@ -294,6 +396,8 @@ const StaffHCM: React.FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
+                )}
+              </Box>
             )}
           </Box>
         </Paper>
@@ -353,6 +457,188 @@ const StaffHCM: React.FC = () => {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setViewDialogOpen(false)}>Close</Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Create Staff Dialog */}
+        <Dialog open={createStaffDialogOpen} onClose={() => setCreateStaffDialogOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle>Add Staff Member</DialogTitle>
+          <DialogContent>
+            <FormControl fullWidth sx={{ mb: 2, mt: 2 }}>
+              <InputLabel>User</InputLabel>
+              <Select
+                label="User"
+                value={staffForm.user || ''}
+                onChange={(e) => setStaffForm({ ...staffForm, user: e.target.value as number })}
+                required
+              >
+                <MenuItem value="">Select User</MenuItem>
+                {users.filter((u: any) => u.role === 'teacher' || u.role === 'admin').map((user: any) => (
+                  <MenuItem key={user.id} value={user.id}>
+                    {user.first_name} {user.last_name} ({user.email})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              label="Employee Number"
+              value={staffForm.employee_number}
+              onChange={(e) => setStaffForm({ ...staffForm, employee_number: e.target.value })}
+              sx={{ mb: 2 }}
+              required
+            />
+            <TextField
+              fullWidth
+              label="Department"
+              value={staffForm.department}
+              onChange={(e) => setStaffForm({ ...staffForm, department: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label="Position"
+              value={staffForm.position}
+              onChange={(e) => setStaffForm({ ...staffForm, position: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Employment Type</InputLabel>
+              <Select
+                label="Employment Type"
+                value={staffForm.employment_type}
+                onChange={(e) => setStaffForm({ ...staffForm, employment_type: e.target.value })}
+              >
+                <MenuItem value="full_time">Full Time</MenuItem>
+                <MenuItem value="part_time">Part Time</MenuItem>
+                <MenuItem value="contract">Contract</MenuItem>
+                <MenuItem value="temporary">Temporary</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              label="Hire Date"
+              type="date"
+              value={staffForm.hire_date}
+              onChange={(e) => setStaffForm({ ...staffForm, hire_date: e.target.value })}
+              sx={{ mb: 2 }}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              fullWidth
+              label="Salary"
+              type="number"
+              value={staffForm.salary}
+              onChange={(e) => setStaffForm({ ...staffForm, salary: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label="Qualifications"
+              multiline
+              rows={2}
+              value={staffForm.qualifications}
+              onChange={(e) => setStaffForm({ ...staffForm, qualifications: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label="Certifications"
+              multiline
+              rows={2}
+              value={staffForm.certifications}
+              onChange={(e) => setStaffForm({ ...staffForm, certifications: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setCreateStaffDialogOpen(false)}>Cancel</Button>
+            <Button 
+              variant="contained" 
+              onClick={handleCreateStaff}
+              disabled={createStaffMutation.isPending || !staffForm.user || !staffForm.employee_number}
+            >
+              {createStaffMutation.isPending ? 'Creating...' : 'Create Staff Record'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Create Leave Request Dialog */}
+        <Dialog open={leaveDialogOpen} onClose={() => setLeaveDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>New Leave Request</DialogTitle>
+          <DialogContent>
+            <FormControl fullWidth sx={{ mb: 2, mt: 2 }}>
+              <InputLabel>Staff Member</InputLabel>
+              <Select
+                label="Staff Member"
+                value={leaveForm.staff || ''}
+                onChange={(e) => setLeaveForm({ ...leaveForm, staff: e.target.value as number })}
+                required
+              >
+                <MenuItem value="">Select Staff Member</MenuItem>
+                {staff.map((s: any) => (
+                  <MenuItem key={s.id} value={s.id}>
+                    {s.user_name} ({s.employee_number})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Leave Type</InputLabel>
+              <Select
+                label="Leave Type"
+                value={leaveForm.leave_type}
+                onChange={(e) => setLeaveForm({ ...leaveForm, leave_type: e.target.value })}
+                required
+              >
+                <MenuItem value="annual">Annual Leave</MenuItem>
+                <MenuItem value="sick">Sick Leave</MenuItem>
+                <MenuItem value="personal">Personal Leave</MenuItem>
+                <MenuItem value="maternity">Maternity Leave</MenuItem>
+                <MenuItem value="paternity">Paternity Leave</MenuItem>
+                <MenuItem value="unpaid">Unpaid Leave</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              label="Start Date"
+              type="date"
+              value={leaveForm.start_date}
+              onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })}
+              sx={{ mb: 2 }}
+              InputLabelProps={{ shrink: true }}
+              required
+            />
+            <TextField
+              fullWidth
+              label="End Date"
+              type="date"
+              value={leaveForm.end_date}
+              onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
+              sx={{ mb: 2 }}
+              InputLabelProps={{ shrink: true }}
+              required
+            />
+            <TextField
+              fullWidth
+              label="Reason"
+              multiline
+              rows={3}
+              value={leaveForm.reason}
+              onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+              sx={{ mb: 2 }}
+              required
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setLeaveDialogOpen(false)}>Cancel</Button>
+            <Button 
+              variant="contained" 
+              onClick={handleCreateLeaveRequest}
+              disabled={createLeaveRequestMutation.isPending || !leaveForm.staff || !leaveForm.start_date || !leaveForm.end_date}
+            >
+              {createLeaveRequestMutation.isPending ? 'Submitting...' : 'Submit Leave Request'}
+            </Button>
           </DialogActions>
         </Dialog>
       </Box>

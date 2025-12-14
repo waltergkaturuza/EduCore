@@ -36,9 +36,11 @@ import Layout from '../../components/Layout';
 import { superadminService } from '../../services/superadmin';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useQueryClient } from '@tanstack/react-query';
+import apiService from '../../services/api';
 
 const SystemMonitoring: React.FC = () => {
   const queryClient = useQueryClient();
+  const [alertsExpanded, setAlertsExpanded] = useState(true);
 
   // Fetch system health data
   const { data: healthData, isLoading } = useQuery({
@@ -99,26 +101,94 @@ const SystemMonitoring: React.FC = () => {
     cpuUsage: latestHealth.cpu_usage || 0,
   };
 
-  const systemAlerts = [
-    { id: 1, severity: 'warning', message: 'API response time above threshold', time: '2 min ago', status: 'active' },
-    { id: 2, severity: 'info', message: 'Scheduled backup completed successfully', time: '1 hour ago', status: 'resolved' },
-    { id: 3, severity: 'error', message: 'Payment gateway timeout detected', time: '15 min ago', status: 'active' },
-  ];
+  // Fetch system alerts from backend
+  interface SystemAlertItem {
+    id: number;
+    severity: string;
+    message: string;
+    time: string;
+    status: string;
+  }
+  
+  const { data: alertsData } = useQuery<{ results: any[] }>({
+    queryKey: ['system-alerts-monitoring'],
+    queryFn: async () => {
+      try {
+        const response = await apiService.get<{ results: any[] }>('/superadmin/system-alerts/');
+        return response.data;
+      } catch (error) {
+        return { results: [] };
+      }
+    },
+    refetchInterval: 30000,
+  });
+  const systemAlerts: SystemAlertItem[] = (alertsData?.results || []).map((alert: any): SystemAlertItem => ({
+    id: alert.id,
+    severity: alert.severity || 'info',
+    message: alert.message || alert.description,
+    time: alert.created_at ? `${Math.floor((Date.now() - new Date(alert.created_at).getTime()) / 60000)} min ago` : 'Just now',
+    status: alert.status || 'active',
+  }));
 
-  const backgroundJobs = [
-    { id: 1, name: 'Email Queue Processor', status: 'running', processed: 1250, failed: 2, lastRun: '2 min ago' },
-    { id: 2, name: 'SMS Queue Processor', status: 'running', processed: 850, failed: 0, lastRun: '1 min ago' },
-    { id: 3, name: 'Report Generator', status: 'idle', processed: 45, failed: 0, lastRun: '30 min ago' },
-    { id: 4, name: 'Backup Job', status: 'completed', processed: 1, failed: 0, lastRun: '2 hours ago' },
-  ];
+  // Fetch background jobs from backend
+  interface BackgroundJob {
+    id: number;
+    name: string;
+    status: string;
+    processed: number;
+    failed: number;
+    lastRun: string;
+  }
+  
+  const { data: jobsData } = useQuery<{ results: any[] }>({
+    queryKey: ['background-jobs'],
+    queryFn: async () => {
+      try {
+        const response = await apiService.get<{ results: any[] }>('/superadmin/background-jobs/');
+        return response.data;
+      } catch (error) {
+        return { results: [] };
+      }
+    },
+    refetchInterval: 30000,
+  });
+  const backgroundJobs: BackgroundJob[] = (jobsData?.results || []).map((job: any): BackgroundJob => ({
+    id: job.id,
+    name: job.name || job.job_name,
+    status: job.status || 'idle',
+    processed: job.processed_count || job.processed || 0,
+    failed: job.failed_count || job.failed || 0,
+    lastRun: job.last_run_at ? `${Math.floor((Date.now() - new Date(job.last_run_at).getTime()) / 60000)} min ago` : 'Never',
+  }));
 
-  const apiEndpoints = [
-    { endpoint: '/api/auth/login', requests: 1250, avgResponse: 145, errorRate: 0.1, status: 'healthy' },
-    { endpoint: '/api/students/', requests: 8500, avgResponse: 120, errorRate: 0.05, status: 'healthy' },
-    { endpoint: '/api/attendance/', requests: 3200, avgResponse: 180, errorRate: 0.2, status: 'warning' },
-    { endpoint: '/api/fees/', requests: 2100, avgResponse: 200, errorRate: 0.15, status: 'healthy' },
-    { endpoint: '/api/assessments/', requests: 5600, avgResponse: 165, errorRate: 0.08, status: 'healthy' },
-  ];
+  // Fetch API endpoint performance from backend
+  interface ApiEndpoint {
+    endpoint: string;
+    requests: number;
+    avgResponse: number;
+    errorRate: number;
+    status: string;
+  }
+  
+  const { data: endpointsData } = useQuery<{ results: any[] }>({
+    queryKey: ['api-endpoints-performance'],
+    queryFn: async () => {
+      try {
+        const response = await apiService.get<{ results: any[] }>('/superadmin/api-endpoints-performance/');
+        return response.data;
+      } catch (error) {
+        return { results: [] };
+      }
+    },
+    refetchInterval: 60000, // Refresh every minute
+  });
+  const apiEndpoints: ApiEndpoint[] = (endpointsData?.results || []).map((endpoint: any): ApiEndpoint => ({
+    endpoint: endpoint.endpoint || endpoint.path,
+    requests: endpoint.request_count || endpoint.requests || 0,
+    avgResponse: endpoint.avg_response_time || endpoint.avg_response || 0,
+    errorRate: endpoint.error_rate || 0,
+    status: endpoint.error_rate > 0.2 ? 'warning' : endpoint.error_rate > 0.1 ? 'warning' : 'healthy',
+  }));
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -165,31 +235,55 @@ const SystemMonitoring: React.FC = () => {
 
         {/* System Alerts */}
         {systemAlerts.filter(a => a.status === 'active').length > 0 && (
-          <Box sx={{ mb: 3 }}>
-            {systemAlerts
-              .filter(a => a.status === 'active')
-              .map((alert) => (
-                <Alert
-                  key={alert.id}
-                  severity={alert.severity as 'warning' | 'error' | 'info'}
-                  sx={{ mb: 1, borderRadius: 2 }}
-                  action={
-                    <Button size="small" color="inherit">
-                      View Details
-                    </Button>
-                  }
-                >
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {alert.message}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {alert.time}
-                    </Typography>
-                  </Box>
-                </Alert>
-              ))}
-          </Box>
+          <Paper sx={{ mb: 3, p: 2, borderRadius: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {systemAlerts.filter((a: SystemAlertItem) => a.status === 'active' && a.severity === 'error').length > 0 ? (
+                  <WarningIcon color="error" />
+                ) : (
+                  <CheckCircleIcon color="success" />
+                )}
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  System Alerts
+                </Typography>
+              </Box>
+              <Button size="small" onClick={() => setAlertsExpanded(!alertsExpanded)}>
+                {alertsExpanded ? 'Hide' : 'Show'}
+              </Button>
+            </Box>
+            {alertsExpanded && (
+              <Box>
+                {systemAlerts
+                  .filter((a: SystemAlertItem) => a.status === 'active')
+                  .map((alert: SystemAlertItem) => (
+                    <Alert
+                      key={alert.id}
+                      severity={alert.severity as 'warning' | 'error' | 'info'}
+                      sx={{ mb: 1, borderRadius: 2 }}
+                      icon={
+                        alert.severity === 'error' ? <WarningIcon /> :
+                        alert.severity === 'warning' ? <WarningIcon /> :
+                        <CheckCircleIcon />
+                      }
+                      action={
+                        <Button size="small" color="inherit">
+                          View Details
+                        </Button>
+                      }
+                    >
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {alert.message}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {alert.time}
+                        </Typography>
+                      </Box>
+                    </Alert>
+                  ))}
+              </Box>
+            )}
+          </Paper>
         )}
 
         {/* Key Metrics */}
@@ -456,7 +550,7 @@ const SystemMonitoring: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {backgroundJobs.map((job) => (
+                  {backgroundJobs.map((job: BackgroundJob) => (
                     <TableRow key={job.id}>
                       <TableCell sx={{ fontWeight: 500 }}>{job.name}</TableCell>
                       <TableCell>
@@ -509,7 +603,7 @@ const SystemMonitoring: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {apiEndpoints.map((endpoint, idx) => (
+                  {apiEndpoints.map((endpoint: ApiEndpoint, idx: number) => (
                     <TableRow key={idx}>
                       <TableCell sx={{ fontWeight: 500, fontFamily: 'monospace' }}>
                         {endpoint.endpoint}

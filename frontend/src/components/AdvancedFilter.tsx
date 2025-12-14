@@ -89,14 +89,14 @@ const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
           Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
         </Button>
         {activeFiltersCount > 0 && (
-          <Button
-            variant="outlined"
+          <IconButton
             color="error"
-            startIcon={<ClearIcon />}
             onClick={clearFilters}
+            title="Clear all filters"
+            sx={{ border: '1px solid', borderColor: 'error.main' }}
           >
-            Clear
-          </Button>
+            <ClearIcon />
+          </IconButton>
         )}
       </Box>
 
@@ -167,6 +167,7 @@ const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
 };
 
 export default AdvancedFilter;
+
 
 
 

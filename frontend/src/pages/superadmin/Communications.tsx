@@ -30,6 +30,8 @@ import {
   DialogActions,
   IconButton,
   Switch,
+  LinearProgress,
+  Alert,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -45,6 +47,7 @@ import {
 import Layout from '../../components/Layout';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { superadminService } from '../../services/superadmin';
+import apiService from '../../services/api';
 
 interface Notification {
   id: number;
@@ -70,6 +73,15 @@ const Communications: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
+  const [notificationForm, setNotificationForm] = useState({
+    type: 'email' as 'email' | 'sms' | 'in_app',
+    recipients: 'all',
+    subject: '',
+    message: '',
+    send_immediately: true,
+    scheduled_at: '',
+  });
   const queryClient = useQueryClient();
 
   // Fetch announcements (notifications)
@@ -79,9 +91,20 @@ const Communications: React.FC = () => {
   });
   const announcements = announcementsData?.results || [];
 
-  // Fetch message templates (if available)
-  // Note: You may need to add getMessageTemplates to superadminService
-  const templates: Template[] = []; // Placeholder - implement when backend API is ready
+  // Fetch message templates from backend
+  const { data: templatesData, isLoading: templatesLoading } = useQuery<{ results: Template[] }>({
+    queryKey: ['messageTemplates'],
+    queryFn: async () => {
+      try {
+        const response = await apiService.get<{ results: Template[] }>('/superadmin/message-templates/');
+        return response.data;
+      } catch (error) {
+        // If endpoint doesn't exist yet, return empty array
+        return { results: [] };
+      }
+    },
+  });
+  const templates: Template[] = templatesData?.results || [];
 
   // Get SMS/Email stats from platform metrics
   const { data: platformMetrics } = useQuery({
@@ -105,12 +128,44 @@ const Communications: React.FC = () => {
 
   // Send announcement mutation
   const sendAnnouncementMutation = useMutation({
-    mutationFn: (data: any) => superadminService.publishAnnouncement(data.id),
+    mutationFn: async (data: any) => {
+      if (data.id) {
+        return superadminService.publishAnnouncement(data.id);
+      } else {
+        // Create and send new announcement
+        const announcementData = {
+          title: data.subject,
+          message: data.message,
+          channels: [data.type],
+          target_roles: [data.recipients],
+        };
+        // Create announcement via API
+        const createResponse = await apiService.post('/superadmin/announcements/', announcementData);
+        const announcement = createResponse.data as { id: number };
+        if (data.send_immediately) {
+          return superadminService.publishAnnouncement(announcement.id);
+        }
+        return announcement;
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['globalAnnouncements'] });
+      refetchAnnouncements();
       setSendDialogOpen(false);
+      setNotificationForm({
+        type: 'email',
+        recipients: 'all',
+        subject: '',
+        message: '',
+        send_immediately: true,
+        scheduled_at: '',
+      });
     },
   });
+
+  const handleSendNotification = () => {
+    sendAnnouncementMutation.mutate(notificationForm);
+  };
 
   return (
     <Layout>
@@ -222,8 +277,8 @@ const Communications: React.FC = () => {
           <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
             <Tab label="Send Notification" />
             <Tab label="Templates" />
-            <Tab label="History" />
-            <Tab label="Settings" />
+            <Tab label="History" icon={<HistoryIcon />} iconPosition="start" />
+            <Tab label="Settings" icon={<SettingsIcon />} iconPosition="start" />
           </Tabs>
         </Paper>
 
@@ -231,14 +286,24 @@ const Communications: React.FC = () => {
         {tabValue === 0 && (
           <Card>
             <CardContent>
-              <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
-                Send Announcement
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  Send Announcement
+                </Typography>
+                <IconButton onClick={() => refetchAnnouncements()} title="Refresh">
+                  <SettingsIcon />
+                </IconButton>
+              </Box>
               <Grid container spacing={3}>
                 <Grid item xs={12} md={6}>
                   <FormControl fullWidth>
                     <InputLabel>Notification Type</InputLabel>
-                    <Select label="Notification Type" defaultValue="email" sx={{ borderRadius: 2 }}>
+                    <Select 
+                      label="Notification Type" 
+                      value={notificationForm.type}
+                      onChange={(e) => setNotificationForm({ ...notificationForm, type: e.target.value as 'email' | 'sms' | 'in_app' })}
+                      sx={{ borderRadius: 2 }}
+                    >
                       <MenuItem value="email">
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <EmailIcon fontSize="small" />
@@ -263,7 +328,12 @@ const Communications: React.FC = () => {
                 <Grid item xs={12} md={6}>
                   <FormControl fullWidth>
                     <InputLabel>Recipients</InputLabel>
-                    <Select label="Recipients" defaultValue="all" sx={{ borderRadius: 2 }}>
+                    <Select 
+                      label="Recipients" 
+                      value={notificationForm.recipients}
+                      onChange={(e) => setNotificationForm({ ...notificationForm, recipients: e.target.value })}
+                      sx={{ borderRadius: 2 }}
+                    >
                       <MenuItem value="all">All Schools</MenuItem>
                       <MenuItem value="admins">All School Admins</MenuItem>
                       <MenuItem value="teachers">All Teachers</MenuItem>
@@ -276,6 +346,8 @@ const Communications: React.FC = () => {
                   <TextField
                     fullWidth
                     label="Subject / Title"
+                    value={notificationForm.subject}
+                    onChange={(e) => setNotificationForm({ ...notificationForm, subject: e.target.value })}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
@@ -285,20 +357,47 @@ const Communications: React.FC = () => {
                     multiline
                     rows={6}
                     label="Message"
+                    value={notificationForm.message}
+                    onChange={(e) => setNotificationForm({ ...notificationForm, message: e.target.value })}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
                 <Grid item xs={12}>
                   <FormControlLabel
-                    control={<Checkbox defaultChecked />}
+                    control={
+                      <Switch
+                        checked={notificationForm.send_immediately}
+                        onChange={(e) => setNotificationForm({ ...notificationForm, send_immediately: e.target.checked })}
+                      />
+                    }
                     label="Send immediately"
                   />
+                  <FormControlLabel
+                    control={<Checkbox defaultChecked />}
+                    label="Also save as template for future use"
+                    sx={{ ml: 2 }}
+                  />
                 </Grid>
+                {!notificationForm.send_immediately && (
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      type="datetime-local"
+                      label="Schedule Date & Time"
+                      value={notificationForm.scheduled_at}
+                      onChange={(e) => setNotificationForm({ ...notificationForm, scheduled_at: e.target.value })}
+                      InputLabelProps={{ shrink: true }}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    />
+                  </Grid>
+                )}
                 <Grid item xs={12}>
                   <Button
                     variant="contained"
                     startIcon={<SendIcon />}
                     fullWidth
+                    onClick={handleSendNotification}
+                    disabled={sendAnnouncementMutation.isPending || !notificationForm.subject || !notificationForm.message}
                     sx={{
                       py: 1.5,
                       borderRadius: 2,
@@ -308,7 +407,7 @@ const Communications: React.FC = () => {
                       },
                     }}
                   >
-                    Send Notification
+                    {sendAnnouncementMutation.isPending ? 'Sending...' : 'Send Notification'}
                   </Button>
                 </Grid>
               </Grid>
@@ -332,8 +431,13 @@ const Communications: React.FC = () => {
                 New Template
               </Button>
             </Box>
-            <Grid container spacing={3}>
-              {templates.map((template) => (
+            {templatesLoading ? (
+              <LinearProgress sx={{ mb: 3 }} />
+            ) : templates.length === 0 ? (
+              <Alert severity="info">No templates found. Create your first template to get started.</Alert>
+            ) : (
+              <Grid container spacing={3}>
+                {templates.map((template) => (
                 <Grid item xs={12} md={6} key={template.id}>
                   <Card>
                     <CardContent>
@@ -372,62 +476,90 @@ const Communications: React.FC = () => {
                   </Card>
                 </Grid>
               ))}
-            </Grid>
+              </Grid>
+            )}
           </Box>
         )}
 
         {/* History Tab */}
         {tabValue === 2 && (
-          <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ background: '#f8fafc' }}>
-                  <TableCell sx={{ fontWeight: 600 }}>Title</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Recipients</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Sent Count</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Sent At</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {announcementsLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center">Loading...</TableCell>
+          <Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <HistoryIcon sx={{ color: 'primary.main' }} />
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  Communication History
+                </Typography>
+              </Box>
+              <IconButton onClick={() => refetchAnnouncements()} title="Refresh history">
+                <SettingsIcon />
+              </IconButton>
+            </Box>
+            <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ background: '#f8fafc' }}>
+                    <TableCell sx={{ fontWeight: 600 }}>Title</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Recipients</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Sent Count</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Sent At</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
                   </TableRow>
-                ) : announcements.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center">No announcements found</TableCell>
-                  </TableRow>
-                ) : (
-                  announcements.map((announcement: any) => (
-                  <TableRow key={announcement.id}>
-                    <TableCell sx={{ fontWeight: 500 }}>{announcement.title}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={announcement.channels?.join(', ') || 'all'}
-                        size="small"
-                        icon={<EmailIcon />}
-                        sx={{ borderRadius: 2 }}
-                      />
-                    </TableCell>
-                    <TableCell>{announcement.target_roles?.join(', ') || 'all'}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={announcement.status}
-                        size="small"
-                        color={announcement.status === 'sent' ? 'success' : announcement.status === 'failed' ? 'error' : 'warning'}
-                        sx={{ borderRadius: 2, textTransform: 'capitalize' }}
-                      />
-                    </TableCell>
-                    <TableCell>{announcement.recipient_count || 0}</TableCell>
-                    <TableCell>{announcement.sent_at ? new Date(announcement.sent_at).toLocaleString() : '-'}</TableCell>
-                  </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                </TableHead>
+                <TableBody>
+                  {announcementsLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={7} align="center">Loading...</TableCell>
+                    </TableRow>
+                  ) : announcements.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} align="center">No announcements found</TableCell>
+                    </TableRow>
+                  ) : (
+                    announcements.map((announcement: Notification) => (
+                      <TableRow key={announcement.id} hover>
+                        <TableCell sx={{ fontWeight: 500 }}>{announcement.title}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={announcement.type.toUpperCase()}
+                            size="small"
+                            icon={
+                              announcement.type === 'email' ? <EmailIcon /> :
+                              announcement.type === 'sms' ? <SmsIcon /> :
+                              <NotificationsIcon />
+                            }
+                            sx={{ borderRadius: 2 }}
+                          />
+                        </TableCell>
+                        <TableCell>{announcement.recipients}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={announcement.status}
+                            size="small"
+                            color={announcement.status === 'sent' ? 'success' : announcement.status === 'failed' ? 'error' : 'warning'}
+                            sx={{ borderRadius: 2, textTransform: 'capitalize' }}
+                          />
+                        </TableCell>
+                        <TableCell>{announcement.sent_count || 0}</TableCell>
+                        <TableCell>{announcement.sent_at ? new Date(announcement.sent_at).toLocaleString() : '-'}</TableCell>
+                        <TableCell>
+                          <IconButton
+                            size="small"
+                            onClick={() => setSelectedNotification(announcement)}
+                            title="View Details"
+                          >
+                            <SettingsIcon fontSize="small" />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
         )}
 
         {/* Settings Tab */}
@@ -507,6 +639,140 @@ const Communications: React.FC = () => {
               </Card>
             </Grid>
           </Grid>
+        )}
+
+        {/* Send Announcement Dialog */}
+        <Dialog open={sendDialogOpen} onClose={() => setSendDialogOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle>Send Announcement</DialogTitle>
+          <DialogContent>
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Notification Type</InputLabel>
+                  <Select 
+                    label="Notification Type" 
+                    value={notificationForm.type}
+                    onChange={(e) => setNotificationForm({ ...notificationForm, type: e.target.value as 'email' | 'sms' | 'in_app' })}
+                  >
+                    <MenuItem value="email">Email</MenuItem>
+                    <MenuItem value="sms">SMS</MenuItem>
+                    <MenuItem value="in_app">In-App</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Recipients</InputLabel>
+                  <Select 
+                    label="Recipients" 
+                    value={notificationForm.recipients}
+                    onChange={(e) => setNotificationForm({ ...notificationForm, recipients: e.target.value })}
+                  >
+                    <MenuItem value="all">All Schools</MenuItem>
+                    <MenuItem value="admins">All School Admins</MenuItem>
+                    <MenuItem value="teachers">All Teachers</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Subject / Title"
+                  value={notificationForm.subject}
+                  onChange={(e) => setNotificationForm({ ...notificationForm, subject: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={6}
+                  label="Message"
+                  value={notificationForm.message}
+                  onChange={(e) => setNotificationForm({ ...notificationForm, message: e.target.value })}
+                />
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSendDialogOpen(false)}>Cancel</Button>
+            <Button
+              variant="contained"
+              startIcon={<SendIcon />}
+              onClick={handleSendNotification}
+              disabled={sendAnnouncementMutation.isPending || !notificationForm.subject || !notificationForm.message}
+            >
+              {sendAnnouncementMutation.isPending ? 'Sending...' : 'Send'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Template Dialog */}
+        <Dialog open={templateDialogOpen} onClose={() => setTemplateDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Create Message Template</DialogTitle>
+          <DialogContent>
+            <TextField
+              fullWidth
+              label="Template Name"
+              sx={{ mt: 2, mb: 2 }}
+            />
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Template Type</InputLabel>
+              <Select label="Template Type" defaultValue="email">
+                <MenuItem value="email">Email</MenuItem>
+                <MenuItem value="sms">SMS</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              label="Subject (for email)"
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              multiline
+              rows={6}
+              label="Template Content"
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setTemplateDialogOpen(false)}>Cancel</Button>
+            <Button variant="contained">Save Template</Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Notification Details Dialog */}
+        {selectedNotification && (
+          <Dialog open={!!selectedNotification} onClose={() => setSelectedNotification(null)} maxWidth="sm" fullWidth>
+            <DialogTitle>Notification Details</DialogTitle>
+            <DialogContent>
+              <Typography variant="h6" sx={{ mb: 1 }}>{selectedNotification.title}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {selectedNotification.message}
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Type</Typography>
+                  <Typography variant="body2">{selectedNotification.type.toUpperCase()}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Status</Typography>
+                  <Typography variant="body2">{selectedNotification.status}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Sent Count</Typography>
+                  <Typography variant="body2">{selectedNotification.sent_count}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Sent At</Typography>
+                  <Typography variant="body2">{selectedNotification.sent_at ? new Date(selectedNotification.sent_at).toLocaleString() : '-'}</Typography>
+                </Grid>
+              </Grid>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setSelectedNotification(null)}>Close</Button>
+            </DialogActions>
+          </Dialog>
         )}
       </Container>
     </Layout>

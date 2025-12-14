@@ -82,7 +82,7 @@ export const useWebSocket = (options: UseWebSocketOptions) => {
         wsRef.current.close();
       }
     };
-  }, [url, reconnect, reconnectInterval]);
+  }, [url, reconnect, reconnectInterval, onOpen, onError, onMessage, onClose]);
 
   const sendMessage = (message: any) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -103,6 +103,7 @@ export const useWebSocket = (options: UseWebSocketOptions) => {
     disconnect,
   };
 };
+
 
 
 

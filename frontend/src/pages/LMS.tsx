@@ -36,9 +36,14 @@ const LMS: React.FC = () => {
   return (
     <Layout>
       <Container maxWidth="lg">
-        <Typography variant="h4" component="h1" gutterBottom>
-          e-Learning
-        </Typography>
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h4" component="h1" gutterBottom>
+            e-Learning
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            Access your courses and learning materials
+          </Typography>
+        </Box>
 
         <Grid container spacing={3}>
           {courses.map((course) => (
@@ -77,6 +82,7 @@ const LMS: React.FC = () => {
 };
 
 export default LMS;
+
 
 
 

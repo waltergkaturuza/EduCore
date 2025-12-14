@@ -117,28 +117,50 @@ const PlatformDashboard: React.FC = () => {
     { plan: 'Free', count: 8, revenue: 0 },
   ];
 
-  const recentSignups = [
-    { id: 1, name: 'Greenwood High', plan: 'Premium', date: '2 hours ago', status: 'active' },
-    { id: 2, name: 'Riverside Academy', plan: 'Enterprise', date: '5 hours ago', status: 'trial' },
-    { id: 3, name: 'Sunset Primary', plan: 'Basic', date: '1 day ago', status: 'active' },
-  ];
-
-  const systemAlerts = [
-    { id: 1, type: 'warning', message: 'Payment gateway timeout detected', time: '15 min ago' },
-    { id: 2, type: 'info', message: 'Scheduled backup completed', time: '2 hours ago' },
-  ];
+  // Fetch system alerts from backend
+  const { data: alertsData } = useQuery<{ results: any[] }>({
+    queryKey: ['system-alerts'],
+    queryFn: async () => {
+      try {
+        const response = await apiService.get<{ results: any[] }>('/superadmin/system-alerts/', {
+          params: { limit: 5, status: 'active' }
+        });
+        return response.data;
+      } catch (error) {
+        return { results: [] };
+      }
+    },
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+  
+  interface SystemAlert {
+    id: number;
+    type: string;
+    message: string;
+    time: string;
+  }
+  
+  const systemAlerts: SystemAlert[] = (alertsData?.results || []).map((alert: any): SystemAlert => ({
+    id: alert.id,
+    type: alert.severity || alert.type || 'info',
+    message: alert.message || alert.description,
+    time: alert.created_at ? `${Math.floor((Date.now() - new Date(alert.created_at).getTime()) / 60000)} min ago` : 'Just now',
+  }));
 
   if (metricsLoading) {
     return (
       <Layout>
         <Container>
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+          <Box sx={{ p: 3 }}>
+            <LinearProgress sx={{ mb: 2 }} />
             <Typography>Loading platform metrics...</Typography>
           </Box>
         </Container>
       </Layout>
     );
   }
+
+  const recentTenantsList = (recentTenants as any)?.results || [];
 
   const stats = [
     {
@@ -209,9 +231,24 @@ const PlatformDashboard: React.FC = () => {
             <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 1, color: '#1e293b' }}>
               Platform Overview
             </Typography>
-            <Typography variant="body1" color="text.secondary">
-              Real-time health and performance metrics of your entire platform
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body1" color="text.secondary">
+                Real-time health and performance metrics of your entire platform
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 2 }}>
+                <Box
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    bgcolor: isConnected ? 'success.main' : 'error.main',
+                  }}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </Typography>
+              </Box>
+            </Box>
           </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Button
@@ -237,10 +274,22 @@ const PlatformDashboard: React.FC = () => {
           </Box>
         </Box>
 
+        {/* WebSocket Status */}
+        {lastMessage && (
+          <Box sx={{ mb: 2 }}>
+            <Paper sx={{ p: 1.5, bgcolor: 'info.light', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ScheduleIcon sx={{ fontSize: 18 }} />
+              <Typography variant="caption">
+                Last update: {lastMessage.timestamp ? new Date(lastMessage.timestamp).toLocaleTimeString() : 'Just now'}
+              </Typography>
+            </Paper>
+          </Box>
+        )}
+
         {/* System Alerts */}
         {systemAlerts.length > 0 && (
           <Box sx={{ mb: 3 }}>
-            {systemAlerts.map((alert) => (
+            {systemAlerts.map((alert: SystemAlert) => (
               <Paper
                 key={alert.id}
                 sx={{
@@ -345,9 +394,12 @@ const PlatformDashboard: React.FC = () => {
             <Card>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                    Revenue Trend (MRR)
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <TrendingUpIcon sx={{ color: 'primary.main' }} />
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      Revenue Trend (MRR)
+                    </Typography>
+                  </Box>
                   <Button size="small" onClick={() => navigate('/superadmin/revenue')}>
                     View Details
                   </Button>
@@ -467,37 +519,57 @@ const PlatformDashboard: React.FC = () => {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {recentSignups.map((signup) => (
-                        <TableRow key={signup.id}>
-                          <TableCell sx={{ fontWeight: 500 }}>{signup.name}</TableCell>
-                          <TableCell>
-                            <Chip
-                              label={signup.plan}
-                              size="small"
-                              sx={{
-                                fontWeight: 500,
-                                borderRadius: 2,
-                                background:
-                                  signup.plan === 'Enterprise'
-                                    ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                                    : signup.plan === 'Premium'
-                                    ? 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)'
-                                    : undefined,
-                                color: signup.plan !== 'Free' ? 'white' : undefined,
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={signup.status}
-                              size="small"
-                              color={signup.status === 'active' ? 'success' : 'default'}
-                              sx={{ fontWeight: 500, borderRadius: 2 }}
-                            />
-                          </TableCell>
-                          <TableCell>{signup.date}</TableCell>
+                      {recentTenantsList.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} align="center">No recent signups</TableCell>
                         </TableRow>
-                      ))}
+                      ) : (
+                        recentTenantsList.map((tenant: any) => (
+                          <TableRow key={tenant.id} hover>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
+                                  {tenant.name?.[0] || 'S'}
+                                </Avatar>
+                                <Typography sx={{ fontWeight: 500 }}>{tenant.name || tenant.tenant_name || 'N/A'}</Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                label={tenant.subscription_plan?.name || tenant.plan || 'Free'}
+                                size="small"
+                                sx={{
+                                  fontWeight: 500,
+                                  borderRadius: 2,
+                                  background:
+                                    tenant.subscription_plan?.name === 'Enterprise' || tenant.plan === 'Enterprise'
+                                      ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                                      : tenant.subscription_plan?.name === 'Premium' || tenant.plan === 'Premium'
+                                      ? 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)'
+                                      : undefined,
+                                  color: (tenant.subscription_plan?.name || tenant.plan) !== 'Free' ? 'white' : undefined,
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                label={tenant.status || 'active'}
+                                size="small"
+                                color={tenant.status === 'active' ? 'success' : tenant.status === 'trial' ? 'warning' : 'default'}
+                                sx={{ fontWeight: 500, borderRadius: 2 }}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <ScheduleIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                                {tenant.created_at
+                                  ? new Date(tenant.created_at).toLocaleDateString()
+                                  : tenant.date || '-'}
+                              </Box>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </TableContainer>

@@ -80,11 +80,18 @@ class DashboardMetricsViewSet(viewsets.ReadOnlyModelViewSet):
         if not tenant:
             return Response({'error': 'User has no tenant'}, status=status.HTTP_400_BAD_REQUEST)
         
-        metrics = DashboardMetrics.objects.filter(tenant=tenant).first()
+        # Get the most recent metrics, ordered by calculated_at
+        metrics = DashboardMetrics.objects.filter(tenant=tenant).order_by('-calculated_at').first()
         
         if not metrics:
             # Calculate if not exists
-            metrics = DashboardMetricsCalculator.calculate_all_metrics(tenant)
+            try:
+                metrics = DashboardMetricsCalculator.calculate_all_metrics(tenant)
+            except Exception as e:
+                return Response({
+                    'error': 'Failed to calculate metrics',
+                    'detail': str(e)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         if metrics:
             serializer = self.get_serializer(metrics)

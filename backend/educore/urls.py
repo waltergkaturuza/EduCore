@@ -41,6 +41,7 @@ urlpatterns = [
     path('api/lms/', include('apps.lms.urls')),
     path('api/superadmin/', include('apps.superadmin.urls')),
     path('api/schooladmin/', include('apps.schooladmin.urls')),
+    path('api/teachers/', include('apps.teachers.urls')),
 ]
 
 if settings.DEBUG:

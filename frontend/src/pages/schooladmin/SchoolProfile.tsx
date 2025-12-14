@@ -40,6 +40,7 @@ import {
   Palette as PaletteIcon,
   Settings as SettingsIcon,
 } from '@mui/icons-material';
+import { Tooltip } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiService from '../../services/api';
 import Layout from '../../components/Layout';
@@ -64,6 +65,8 @@ const SchoolProfile: React.FC = () => {
   const [editMode, setEditMode] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploadType, setUploadType] = useState('');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [formData, setFormData] = useState<any>({});
   const queryClient = useQueryClient();
 
   // Fetch school profile
@@ -98,8 +101,46 @@ const SchoolProfile: React.FC = () => {
   };
 
   const handleSave = () => {
-    // Save logic will be handled by individual forms
+    if (tabValue === 0) {
+      // Save school profile
+      updateProfileMutation.mutate(formData);
+    } else if (tabValue === 3) {
+      // Save academic config
+      updateAcademicConfigMutation.mutate(formData);
+    }
+    setFormData({});
     setEditMode(false);
+  };
+
+  const handleFieldChange = (field: string, value: any) => {
+    setFormData((prev: any) => ({ ...prev, [field]: value }));
+  };
+
+  const uploadFileMutation = useMutation({
+    mutationFn: async (data: FormData) => {
+      return apiService.patch(`/schooladmin/school-profile/`, data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schoolProfile'] });
+      setUploadDialogOpen(false);
+      setUploadFile(null);
+    },
+  });
+
+  const handleUpload = () => {
+    if (!uploadFile) return;
+    const formData = new FormData();
+    const fieldMap: Record<string, string> = {
+      logo: 'logo',
+      registration: 'registration_certificate',
+      constitution: 'constitution',
+      principal_signature: 'principal_signature',
+      bursar_signature: 'bursar_signature',
+    };
+    formData.append(fieldMap[uploadType] || uploadType, uploadFile);
+    uploadFileMutation.mutate(formData);
   };
 
   if (isLoading) {
@@ -128,14 +169,24 @@ const SchoolProfile: React.FC = () => {
               Manage school identity, compliance, and academic configuration
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={editMode ? <SaveIcon /> : <EditIcon />}
-            onClick={() => editMode ? handleSave() : setEditMode(true)}
-            sx={{ borderRadius: 2 }}
-          >
-            {editMode ? 'Save Changes' : 'Edit Profile'}
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title={editMode ? 'Save changes' : 'Edit profile'}>
+              <IconButton
+                color="primary"
+                onClick={() => editMode ? handleSave() : setEditMode(true)}
+              >
+                {editMode ? <SaveIcon /> : <EditIcon />}
+              </IconButton>
+            </Tooltip>
+            <Button
+              variant="contained"
+              startIcon={editMode ? <SaveIcon /> : <EditIcon />}
+              onClick={() => editMode ? handleSave() : setEditMode(true)}
+              sx={{ borderRadius: 2 }}
+            >
+              {editMode ? 'Save Changes' : 'Edit Profile'}
+            </Button>
+          </Box>
         </Box>
 
         {/* Tabs */}
@@ -157,25 +208,26 @@ const SchoolProfile: React.FC = () => {
                     <TextField
                       fullWidth
                       label="School Name"
-                      value={profile?.tenant_name || ''}
+                      value={formData.tenant_name !== undefined ? formData.tenant_name : (profile?.tenant_name || '')}
                       disabled={!editMode}
+                      onChange={(e) => handleFieldChange('tenant_name', e.target.value)}
                       sx={{ mb: 2 }}
                     />
                     <TextField
                       fullWidth
                       label="Ministry Registration Number"
-                      value={profile?.ministry_registration_number || ''}
+                      value={formData.ministry_registration_number !== undefined ? formData.ministry_registration_number : (profile?.ministry_registration_number || '')}
                       disabled={!editMode}
-                      onChange={(e) => updateProfileMutation.mutate({ ministry_registration_number: e.target.value })}
+                      onChange={(e) => handleFieldChange('ministry_registration_number', e.target.value)}
                       sx={{ mb: 2 }}
                     />
                     <FormControl fullWidth sx={{ mb: 2 }}>
                       <InputLabel>Accreditation Status</InputLabel>
                       <Select
-                        value={profile?.accreditation_status || 'pending'}
+                        value={formData.accreditation_status !== undefined ? formData.accreditation_status : (profile?.accreditation_status || 'pending')}
                         label="Accreditation Status"
                         disabled={!editMode}
-                        onChange={(e) => updateProfileMutation.mutate({ accreditation_status: e.target.value })}
+                        onChange={(e) => handleFieldChange('accreditation_status', e.target.value)}
                       >
                         <MenuItem value="accredited">Accredited</MenuItem>
                         <MenuItem value="provisional">Provisional</MenuItem>
@@ -228,6 +280,7 @@ const SchoolProfile: React.FC = () => {
                 <Card sx={{ borderRadius: 3, boxShadow: 3 }}>
                   <CardContent>
                     <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>Documents</Typography>
+                    <Divider sx={{ mb: 2 }} />
                     <Grid container spacing={2}>
                       <Grid item xs={12} md={4}>
                         <Paper sx={{ p: 2, textAlign: 'center', borderRadius: 2 }}>
@@ -295,8 +348,9 @@ const SchoolProfile: React.FC = () => {
                       fullWidth
                       label="Primary Color"
                       type="color"
-                      value={profile?.primary_color || '#1976D2'}
+                      value={formData.primary_color !== undefined ? formData.primary_color : (profile?.primary_color || '#1976D2')}
                       disabled={!editMode}
+                      onChange={(e) => handleFieldChange('primary_color', e.target.value)}
                       sx={{ mb: 2 }}
                       InputLabelProps={{ shrink: true }}
                     />
@@ -304,8 +358,9 @@ const SchoolProfile: React.FC = () => {
                       fullWidth
                       label="Secondary Color"
                       type="color"
-                      value={profile?.secondary_color || '#424242'}
+                      value={formData.secondary_color !== undefined ? formData.secondary_color : (profile?.secondary_color || '#424242')}
                       disabled={!editMode}
+                      onChange={(e) => handleFieldChange('secondary_color', e.target.value)}
                       sx={{ mb: 2 }}
                       InputLabelProps={{ shrink: true }}
                     />
@@ -359,10 +414,10 @@ const SchoolProfile: React.FC = () => {
                     <FormControl fullWidth sx={{ mb: 2 }}>
                       <InputLabel>Curriculum Framework</InputLabel>
                       <Select
-                        value={academicConfig?.curriculum_framework || 'zimsec'}
+                        value={formData.curriculum_framework !== undefined ? formData.curriculum_framework : (academicConfig?.curriculum_framework || 'zimsec')}
                         label="Curriculum Framework"
                         disabled={!editMode}
-                        onChange={(e) => updateAcademicConfigMutation.mutate({ curriculum_framework: e.target.value })}
+                        onChange={(e) => handleFieldChange('curriculum_framework', e.target.value)}
                       >
                         <MenuItem value="zimsec">ZIMSEC</MenuItem>
                         <MenuItem value="cambridge">Cambridge</MenuItem>
@@ -373,10 +428,10 @@ const SchoolProfile: React.FC = () => {
                     <FormControl fullWidth sx={{ mb: 2 }}>
                       <InputLabel>Grading System</InputLabel>
                       <Select
-                        value={academicConfig?.grading_system || 'numeric'}
+                        value={formData.grading_system !== undefined ? formData.grading_system : (academicConfig?.grading_system || 'numeric')}
                         label="Grading System"
                         disabled={!editMode}
-                        onChange={(e) => updateAcademicConfigMutation.mutate({ grading_system: e.target.value })}
+                        onChange={(e) => handleFieldChange('grading_system', e.target.value)}
                       >
                         <MenuItem value="numeric">Numeric (0-100)</MenuItem>
                         <MenuItem value="letter">Letter Grades (A-F)</MenuItem>
@@ -387,9 +442,9 @@ const SchoolProfile: React.FC = () => {
                     <FormControlLabel
                       control={
                         <Switch
-                          checked={academicConfig?.report_card_approval_required || false}
+                          checked={formData.report_card_approval_required !== undefined ? formData.report_card_approval_required : (academicConfig?.report_card_approval_required || false)}
                           disabled={!editMode}
-                          onChange={(e) => updateAcademicConfigMutation.mutate({ report_card_approval_required: e.target.checked })}
+                          onChange={(e) => handleFieldChange('report_card_approval_required', e.target.checked)}
                         />
                       }
                       label="Report Card Approval Required"
@@ -419,19 +474,33 @@ const SchoolProfile: React.FC = () => {
         </Paper>
 
         {/* Upload Dialog */}
-        <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Upload {uploadType}</DialogTitle>
+        <Dialog open={uploadDialogOpen} onClose={() => { setUploadDialogOpen(false); setUploadFile(null); }} maxWidth="sm" fullWidth>
+          <DialogTitle>Upload {uploadType.replace('_', ' ')}</DialogTitle>
           <DialogContent>
             <TextField
               fullWidth
               type="file"
-              inputProps={{ accept: uploadType === 'logo' || uploadType.includes('signature') ? 'image/*' : '.pdf,.doc,.docx' }}
+              inputProps={{ 
+                accept: uploadType === 'logo' || uploadType.includes('signature') ? 'image/*' : '.pdf,.doc,.docx',
+                onChange: (e: any) => setUploadFile(e.target.files?.[0] || null)
+              }}
               sx={{ mt: 2 }}
             />
+            {uploadFile && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                Selected: {uploadFile.name}
+              </Alert>
+            )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setUploadDialogOpen(false)}>Cancel</Button>
-            <Button variant="contained" onClick={() => setUploadDialogOpen(false)}>Upload</Button>
+            <Button onClick={() => { setUploadDialogOpen(false); setUploadFile(null); }}>Cancel</Button>
+            <Button 
+              variant="contained" 
+              onClick={handleUpload}
+              disabled={!uploadFile || uploadFileMutation.isPending}
+            >
+              {uploadFileMutation.isPending ? 'Uploading...' : 'Upload'}
+            </Button>
           </DialogActions>
         </Dialog>
       </Box>

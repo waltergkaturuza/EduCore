@@ -85,6 +85,10 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
             return f"{self.first_name} {self.middle_name} {self.last_name}"
         return f"{self.first_name} {self.last_name}"
     
+    def get_full_name(self):
+        """Return full name (method version for compatibility)."""
+        return self.full_name
+    
     def get_short_name(self):
         """Return short name."""
         return self.first_name

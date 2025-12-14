@@ -191,7 +191,11 @@ const ReportsAnalytics: React.FC = () => {
           {/* Generated Reports Tab */}
           <Box sx={{ p: 3 }}>
             {tabValue === 0 && (
-              <TableContainer>
+              <>
+                {reports.length === 0 ? (
+                  <Alert severity="info">No reports have been generated yet. Create a new report to get started.</Alert>
+                ) : (
+                  <TableContainer>
                 <Table>
                   <TableHead>
                     <TableRow>
@@ -242,6 +246,8 @@ const ReportsAnalytics: React.FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
+                )}
+              </>
             )}
 
             {/* Analytics Queries Tab */}

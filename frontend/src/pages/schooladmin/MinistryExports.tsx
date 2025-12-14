@@ -25,6 +25,7 @@ import {
   TextField,
   Paper,
   Alert,
+  AlertTitle,
   LinearProgress,
   MenuItem,
   Select,
@@ -51,18 +52,54 @@ const MinistryExports: React.FC = () => {
   const [selectedExport, setSelectedExport] = useState<MinistryExport | null>(null);
   const queryClient = useQueryClient();
 
-  const { data: exportsData, isLoading } = useQuery({
+  const { data: exportsData, isLoading: exportsLoading, error: exportsError } = useQuery({
     queryKey: ['ministryExports'],
-    queryFn: () => schooladminService.getMinistryExports(),
+    queryFn: async () => {
+      try {
+        console.log('[MinistryExports] Fetching exports...');
+        const data = await schooladminService.getMinistryExports();
+        console.log('[MinistryExports] Exports received:', data);
+        return data;
+      } catch (err: any) {
+        console.error('[MinistryExports] Error fetching exports:', err);
+        console.error('[MinistryExports] Error details:', {
+          message: err?.message,
+          response: err?.response?.data,
+          status: err?.response?.status,
+        });
+        throw err;
+      }
+    },
+    retry: 1,
   });
 
-  const { data: formatsData } = useQuery({
+  const { data: formatsData, isLoading: formatsLoading, error: formatsError } = useQuery({
     queryKey: ['ministryExportFormats'],
-    queryFn: () => apiService.get('/schooladmin/ministry-export-formats/').then(res => res.data),
+    queryFn: async () => {
+      try {
+        console.log('[MinistryExports] Fetching formats...');
+        const data = await apiService.get('/schooladmin/ministry-export-formats/').then(res => res.data);
+        console.log('[MinistryExports] Formats received:', data);
+        return data;
+      } catch (err: any) {
+        console.error('[MinistryExports] Error fetching formats:', err);
+        throw err;
+      }
+    },
+    retry: 1,
   });
 
-  const exports = (exportsData as any)?.results || [];
-  const formats = (formatsData as any)?.results || [];
+  const exports = (exportsData as any)?.results || exportsData || [];
+  const formats = (formatsData as any)?.results || formatsData || [];
+  
+  console.log('[MinistryExports] Render state:', { 
+    exportsLoading, 
+    formatsLoading, 
+    exportsError, 
+    formatsError,
+    exportsCount: exports.length,
+    formatsCount: formats.length 
+  });
 
   const generateMutation = useMutation({
     mutationFn: (id: number) => schooladminService.generateMinistryExport(id),
@@ -90,16 +127,47 @@ const MinistryExports: React.FC = () => {
     setSubmitDialogOpen(true);
   };
 
-  if (isLoading) {
+  if (exportsLoading || formatsLoading) {
+    console.log('[MinistryExports] Rendering loading state');
     return (
       <Layout>
         <Box sx={{ p: 3 }}>
           <LinearProgress />
+          <Typography sx={{ mt: 2 }}>Loading ministry exports...</Typography>
         </Box>
       </Layout>
     );
   }
 
+  if (exportsError || formatsError) {
+    console.error('[MinistryExports] Rendering error state:', { exportsError, formatsError });
+    const error = exportsError || formatsError;
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : (error as any)?.response?.data?.error || (error as any)?.response?.data?.detail || 'Unknown error';
+    const statusCode = (error as any)?.response?.status;
+    
+    return (
+      <Layout>
+        <Box sx={{ p: 3 }}>
+          <Alert severity="error">
+            <AlertTitle>Error Loading Ministry Exports</AlertTitle>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              {errorMessage}
+            </Typography>
+            {statusCode && (
+              <Typography variant="caption" color="text.secondary">
+                HTTP Status: {statusCode}
+              </Typography>
+            )}
+          </Alert>
+        </Box>
+      </Layout>
+    );
+  }
+
+  console.log('[MinistryExports] Rendering main content');
+  
   return (
     <Layout>
       <Box sx={{ p: 3 }}>
@@ -165,7 +233,7 @@ const MinistryExports: React.FC = () => {
               <CardContent>
                 <Typography variant="body2" color="text.secondary">Pending</Typography>
                 <Typography variant="h4" sx={{ fontWeight: 700, mt: 1, color: 'warning.main' }}>
-                  {exports.filter((e: MinistryExport) => e.status === 'generating' || e.status === 'completed' && !e.submitted_to_ministry).length}
+                  {exports.filter((e: MinistryExport) => e.status === 'generating' || (e.status === 'completed' && !e.submitted_to_ministry)).length}
                 </Typography>
               </CardContent>
             </Card>
@@ -239,30 +307,44 @@ const MinistryExports: React.FC = () => {
                       </TableCell>
                       <TableCell>{new Date(exportItem.exported_at).toLocaleString()}</TableCell>
                       <TableCell>
-                        {exportItem.status === 'completed' && exportItem.file && (
-                          <IconButton size="small" href={exportItem.file} target="_blank">
-                            <DownloadIcon />
-                          </IconButton>
-                        )}
-                        {exportItem.status === 'generating' && (
-                          <Button size="small" onClick={() => handleGenerate(exportItem.id)}>
-                            Generate
-                          </Button>
-                        )}
-                        {exportItem.status === 'completed' && !exportItem.submitted_to_ministry && (
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            onClick={() => handleSubmit(exportItem)}
-                          >
-                            <SendIcon />
-                          </IconButton>
-                        )}
-                        {exportItem.submitted_to_ministry && exportItem.submission_reference && (
-                          <Tooltip title={`Reference: ${exportItem.submission_reference}`}>
-                            <CheckCircleIcon color="success" />
+                        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                          <Tooltip title="View Export Details">
+                            <IconButton
+                              size="small"
+                              onClick={() => setSelectedExport(exportItem)}
+                            >
+                              <VisibilityIcon />
+                            </IconButton>
                           </Tooltip>
-                        )}
+                          {exportItem.status === 'completed' && exportItem.file && (
+                            <Tooltip title="Download Export">
+                              <IconButton size="small" href={exportItem.file} target="_blank">
+                                <DownloadIcon />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                          {exportItem.status === 'generating' && (
+                            <Button size="small" onClick={() => handleGenerate(exportItem.id)}>
+                              Generate
+                            </Button>
+                          )}
+                          {exportItem.status === 'completed' && !exportItem.submitted_to_ministry && (
+                            <Tooltip title="Submit to Ministry">
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => handleSubmit(exportItem)}
+                              >
+                                <SendIcon />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                          {exportItem.submitted_to_ministry && exportItem.submission_reference && (
+                            <Tooltip title={`Reference: ${exportItem.submission_reference}`}>
+                              <CheckCircleIcon color="success" />
+                            </Tooltip>
+                          )}
+                        </Box>
                       </TableCell>
                     </TableRow>
                   ))}

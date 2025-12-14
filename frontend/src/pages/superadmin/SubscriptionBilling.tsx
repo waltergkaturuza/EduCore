@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Container,
   Typography,
@@ -88,6 +88,7 @@ const SubscriptionBilling: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [filters, setFilters] = useState<Record<string, any>>({});
   const [search, setSearch] = useState('');
 
@@ -115,91 +116,201 @@ const SubscriptionBilling: React.FC = () => {
     },
   });
 
+  // Fetch platform metrics for overview cards
+  const { data: metricsData } = useQuery({
+    queryKey: ['platform-metrics'],
+    queryFn: () => superadminService.getPlatformMetrics(),
+  });
+
+  // Fetch revenue analytics
+  const { data: revenueAnalyticsData } = useQuery({
+    queryKey: ['revenue-analytics'],
+    queryFn: () => superadminService.getRevenueForecast(6),
+    enabled: false, // Disable if endpoint doesn't exist yet - will calculate from subscriptions
+  });
+
+  const deletePlanMutation = useMutation({
+    mutationFn: async (planId: number) => {
+      return superadminService.deleteSubscriptionPlan(planId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subscription-plans'] });
+    },
+  });
+
+  const deleteSubscriptionMutation = useMutation({
+    mutationFn: async (subscriptionId: number) => {
+      return superadminService.cancelSubscription(subscriptionId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+    },
+  });
+
+  const handleDeletePlan = (planId: number) => {
+    if (window.confirm('Are you sure you want to delete this subscription plan?')) {
+      deletePlanMutation.mutate(planId);
+    }
+  };
+
+  const handleDeleteSubscription = (subscriptionId: number) => {
+    if (window.confirm('Are you sure you want to cancel this subscription?')) {
+      deleteSubscriptionMutation.mutate(subscriptionId);
+    }
+  };
+
+  const handleViewInvoice = (invoice: Invoice) => {
+    setSelectedInvoice(invoice);
+    setInvoiceDialogOpen(true);
+  };
+
+  const filterFields: FilterField[] = [
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      options: [
+        { value: 'active', label: 'Active' },
+        { value: 'trial', label: 'Trial' },
+        { value: 'expired', label: 'Expired' },
+        { value: 'cancelled', label: 'Cancelled' },
+      ],
+    },
+    {
+      name: 'billing_cycle',
+      label: 'Billing Cycle',
+      type: 'select',
+      options: [
+        { value: 'monthly', label: 'Monthly' },
+        { value: 'yearly', label: 'Yearly' },
+      ],
+    },
+  ];
+
+  // Process plans data from backend - NO MOCK DATA
   const plans: SubscriptionPlan[] = plansData?.results 
     ? plansData.results.map((plan: any) => ({
         ...plan,
-        features: Array.isArray(plan.features) ? plan.features : Object.keys(plan.features || {}),
+        features: Array.isArray(plan.features) 
+          ? plan.features 
+          : typeof plan.features === 'object' && plan.features !== null
+          ? Object.keys(plan.features).filter((key: string) => plan.features[key] === true)
+          : [],
       }))
-    : [
-    {
-      id: 1,
-      name: 'Free',
-      price_monthly: 0,
-      price_yearly: 0,
-      max_students: 50,
-      max_teachers: 5,
-      features: ['Basic Features', 'Email Support'],
-      is_active: true,
-    },
-    {
-      id: 2,
-      name: 'Basic',
-      price_monthly: 50,
-      price_yearly: 500,
-      max_students: 200,
-      max_teachers: 15,
-      features: ['All Free Features', 'SMS Notifications', 'Priority Support'],
-      is_active: true,
-    },
-    {
-      id: 3,
-      name: 'Premium',
-      price_monthly: 150,
-      price_yearly: 1500,
-      max_students: 1000,
-      max_teachers: 50,
-      features: ['All Basic Features', 'Advanced Analytics', 'API Access', 'Custom Branding'],
-      is_active: true,
-    },
-    {
-      id: 4,
-      name: 'Enterprise',
-      price_monthly: 500,
-      price_yearly: 5000,
-      max_students: -1, // Unlimited
-      max_teachers: -1,
-      features: ['All Premium Features', 'Dedicated Support', 'Custom Integrations', 'White Label'],
-      is_active: true,
-    },
-  ];
+    : [];
 
-  const subscriptions: SchoolSubscription[] = [
-    { id: 1, school_name: 'Greenwood High', plan_name: 'Enterprise', status: 'active', billing_cycle: 'yearly', amount: 5000, next_billing_date: '2024-07-15', trial_ends_at: undefined },
-    { id: 2, school_name: 'Riverside Academy', plan_name: 'Premium', status: 'trial', billing_cycle: 'monthly', amount: 150, next_billing_date: '2024-07-01', trial_ends_at: '2024-07-01' },
-    { id: 3, school_name: 'Sunset Primary', plan_name: 'Basic', status: 'active', billing_cycle: 'monthly', amount: 50, next_billing_date: '2024-07-10', trial_ends_at: undefined },
-  ];
+  // Process subscriptions data from backend - NO MOCK DATA
+  const subscriptions: SchoolSubscription[] = useMemo(() => {
+    return subscriptionsData?.results?.map((sub: any) => ({
+      id: sub.id,
+      school_name: sub.tenant_name || sub.school_name || 'Unknown School',
+      plan_name: sub.plan_name || sub.plan?.name || 'No Plan',
+      status: sub.status,
+      billing_cycle: sub.billing_cycle,
+      amount: sub.amount || (sub.billing_cycle === 'yearly' ? sub.plan?.price_yearly : sub.plan?.price_monthly) || 0,
+      next_billing_date: sub.next_billing_date,
+      trial_ends_at: sub.trial_ends_at,
+    })) || [];
+  }, [subscriptionsData]);
 
+  // Process invoices data from backend - NO MOCK DATA
   const invoices: Invoice[] = invoicesData?.results?.map((inv: any) => ({
     id: inv.id,
     invoice_number: inv.invoice_number,
-    school_name: inv.tenant_name,
-    amount: inv.total,
+    school_name: inv.tenant_name || inv.school_name || 'Unknown School',
+    amount: inv.total || inv.amount || 0,
     status: inv.status,
     due_date: inv.due_date,
     paid_date: inv.paid_date,
-  })) || [
-    { id: 1, invoice_number: 'INV-2024-001', school_name: 'Greenwood High', amount: 5000, status: 'paid', due_date: '2024-06-15', paid_date: '2024-06-14' },
-    { id: 2, invoice_number: 'INV-2024-002', school_name: 'Riverside Academy', amount: 150, status: 'pending', due_date: '2024-07-01', paid_date: undefined },
-    { id: 3, invoice_number: 'INV-2024-003', school_name: 'Sunset Primary', amount: 50, status: 'overdue', due_date: '2024-06-10', paid_date: undefined },
-  ];
+  })) || [];
 
-  const revenueData = [
-    { month: 'Jan', revenue: 120000, subscriptions: 38 },
-    { month: 'Feb', revenue: 125000, subscriptions: 40 },
-    { month: 'Mar', revenue: 130000, subscriptions: 42 },
-    { month: 'Apr', revenue: 135000, subscriptions: 43 },
-    { month: 'May', revenue: 140000, subscriptions: 44 },
-    { month: 'Jun', revenue: 145000, subscriptions: 45 },
-  ];
+  // Calculate revenue data from analytics or subscriptions - NO MOCK DATA
+  const revenueData = useMemo(() => {
+    if (revenueAnalyticsData?.monthly_data && Array.isArray(revenueAnalyticsData.monthly_data)) {
+      return revenueAnalyticsData.monthly_data.map((item: any) => ({
+        month: new Date(item.month).toLocaleDateString('en-US', { month: 'short' }),
+        revenue: item.revenue || 0,
+        subscriptions: item.subscriptions_count || 0,
+      }));
+    }
+    
+    // Fallback: calculate from subscriptions if analytics not available
+    if (subscriptions.length > 0) {
+      const monthlyData: Record<string, { revenue: number; subscriptions: number }> = {};
+      subscriptions.forEach((sub: SchoolSubscription) => {
+        if (sub.status === 'active' || sub.status === 'trial') {
+          const monthKey = sub.next_billing_date 
+            ? new Date(sub.next_billing_date).toLocaleDateString('en-US', { month: 'short' })
+            : new Date().toLocaleDateString('en-US', { month: 'short' });
+          if (!monthlyData[monthKey]) {
+            monthlyData[monthKey] = { revenue: 0, subscriptions: 0 };
+          }
+          // Calculate monthly equivalent
+          const monthlyAmount = sub.billing_cycle === 'yearly' ? sub.amount / 12 : sub.amount;
+          monthlyData[monthKey].revenue += monthlyAmount;
+          monthlyData[monthKey].subscriptions += 1;
+        }
+      });
+      return Object.entries(monthlyData)
+        .sort(([a], [b]) => {
+          const dateA = new Date(a + ' 1, 2024');
+          const dateB = new Date(b + ' 1, 2024');
+          return dateA.getTime() - dateB.getTime();
+        })
+        .slice(-6)
+        .map(([month, data]) => ({
+          month,
+          revenue: Math.round(data.revenue),
+          subscriptions: data.subscriptions,
+        }));
+    }
+    
+    return [];
+  }, [revenueAnalyticsData, subscriptions]);
 
-  const planDistribution = [
-    { name: 'Enterprise', value: 12, revenue: 60000 },
-    { name: 'Premium', value: 15, revenue: 22500 },
-    { name: 'Basic', value: 10, revenue: 500 },
-    { name: 'Free', value: 8, revenue: 0 },
-  ];
+  // Calculate plan distribution from subscriptions - NO MOCK DATA
+  const planDistribution = useMemo(() => {
+    const distribution: Record<string, { count: number; revenue: number }> = {};
+    
+    subscriptions.forEach((sub: SchoolSubscription) => {
+      if (sub.status === 'active' || sub.status === 'trial') {
+        const planName = sub.plan_name;
+        if (!distribution[planName]) {
+          distribution[planName] = { count: 0, revenue: 0 };
+        }
+        distribution[planName].count += 1;
+        // Calculate monthly equivalent revenue
+        const monthlyAmount = sub.billing_cycle === 'yearly' ? sub.amount / 12 : sub.amount;
+        distribution[planName].revenue += monthlyAmount;
+      }
+    });
+    
+    return Object.entries(distribution).map(([name, data]) => ({
+      name,
+      value: data.count,
+      revenue: Math.round(data.revenue),
+    }));
+  }, [subscriptions]);
 
   const COLORS = ['#667eea', '#ec4899', '#10b981', '#f59e0b'];
+
+  // Calculate overview metrics from backend data
+  const calculatedMRR = useMemo(() => {
+    // Calculate MRR from active subscriptions
+    return subscriptions
+      .filter(s => s.status === 'active' || s.status === 'trial')
+      .reduce((total, sub) => {
+        const monthlyAmount = sub.billing_cycle === 'yearly' ? sub.amount / 12 : sub.amount;
+        return total + monthlyAmount;
+      }, 0);
+  }, [subscriptions]);
+
+  const mrr = metricsData?.mrr || calculatedMRR;
+  const arr = metricsData?.arr || (calculatedMRR * 12);
+  const paidSchools = metricsData?.paid_schools || subscriptions.filter(s => s.status === 'active' && s.plan_name !== 'Free').length;
+  const totalSchools = subscriptions.length;
+  const conversionRate = totalSchools > 0 ? ((paidSchools / totalSchools) * 100).toFixed(0) : '0';
+  const overdueInvoices = invoices.filter(inv => inv.status === 'overdue').length;
 
   return (
     <Layout>
@@ -242,7 +353,7 @@ const SubscriptionBilling: React.FC = () => {
                   <PaymentIcon />
                   <Box>
                     <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                      $145,000
+                      ${mrr.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </Typography>
                     <Typography variant="body2" sx={{ opacity: 0.9 }}>
                       Monthly Recurring Revenue
@@ -264,7 +375,7 @@ const SubscriptionBilling: React.FC = () => {
                   <TrendingUpIcon />
                   <Box>
                     <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                      $1.74M
+                      ${(arr / 1000000).toFixed(2)}M
                     </Typography>
                     <Typography variant="body2" sx={{ opacity: 0.9 }}>
                       Annual Recurring Revenue
@@ -286,7 +397,7 @@ const SubscriptionBilling: React.FC = () => {
                   <CreditCardIcon />
                   <Box>
                     <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                      82%
+                      {conversionRate}%
                     </Typography>
                     <Typography variant="body2" sx={{ opacity: 0.9 }}>
                       Paid Conversion Rate
@@ -308,7 +419,7 @@ const SubscriptionBilling: React.FC = () => {
                   <ReceiptIcon />
                   <Box>
                     <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                      3
+                      {overdueInvoices}
                     </Typography>
                     <Typography variant="body2" sx={{ opacity: 0.9 }}>
                       Overdue Invoices
@@ -332,8 +443,17 @@ const SubscriptionBilling: React.FC = () => {
 
         {/* Subscription Plans Tab */}
         {tabValue === 0 && (
-          <Grid container spacing={3}>
-            {plans.map((plan) => (
+          <>
+            {plansLoading ? (
+              <Paper sx={{ p: 3, textAlign: 'center' }}>
+                <LinearProgress />
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  Loading subscription plans...
+                </Typography>
+              </Paper>
+            ) : plans.length > 0 ? (
+              <Grid container spacing={3}>
+                {plans.map((plan) => (
               <Grid item xs={12} md={6} lg={3} key={plan.id}>
                 <Card
                   sx={{
@@ -382,24 +502,66 @@ const SubscriptionBilling: React.FC = () => {
                     <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
                       <Button
                         size="small"
+                        variant="outlined"
                         startIcon={<EditIcon />}
-                        onClick={() => setPlanDialogOpen(true)}
+                        onClick={() => {
+                          setPlanDialogOpen(true);
+                          navigate(`/superadmin/subscriptions/plan/${plan.id}`);
+                        }}
                         fullWidth
                       >
                         Edit
                       </Button>
+                      <Tooltip title="Delete Plan">
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleDeletePlan(plan.id)}
+                          disabled={deletePlanMutation.isPending}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Tooltip>
                     </Box>
                   </CardContent>
                 </Card>
               </Grid>
             ))}
           </Grid>
+            ) : (
+              <Paper sx={{ p: 4, textAlign: 'center' }}>
+                <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                  No Subscription Plans Found
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Create your first subscription plan to get started
+                </Typography>
+              </Paper>
+            )}
+          </>
         )}
 
         {/* School Subscriptions Tab */}
         {tabValue === 1 && (
-          <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
-            <Table>
+          <>
+            <Box sx={{ mb: 2 }}>
+              <AdvancedFilter
+                fields={filterFields}
+                onFilterChange={(newFilters) => setFilters(newFilters)}
+                onSearchChange={(searchTerm) => setSearch(searchTerm)}
+                searchPlaceholder="Search by school name..."
+              />
+            </Box>
+            {subscriptionsLoading ? (
+              <Paper sx={{ p: 3, textAlign: 'center' }}>
+                <LinearProgress />
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  Loading subscriptions...
+                </Typography>
+              </Paper>
+            ) : subscriptions.length > 0 ? (
+              <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
+                <Table>
               <TableHead>
                 <TableRow sx={{ background: '#f8fafc' }}>
                   <TableCell sx={{ fontWeight: 600 }}>School</TableCell>
@@ -463,22 +625,80 @@ const SubscriptionBilling: React.FC = () => {
                       )}
                     </TableCell>
                     <TableCell align="right">
-                      <IconButton size="small">
-                        <EditIcon />
-                      </IconButton>
+                      <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+                        <Tooltip title="Edit Subscription">
+                          <IconButton
+                            size="small"
+                            onClick={() => navigate(`/superadmin/subscriptions/${sub.id}`)}
+                          >
+                            <EditIcon />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Cancel Subscription">
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleDeleteSubscription(sub.id)}
+                            disabled={deleteSubscriptionMutation.isPending}
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </TableContainer>
+            ) : (
+              <Paper sx={{ p: 4, textAlign: 'center' }}>
+                <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                  No Subscriptions Found
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {search || Object.keys(filters).length > 0
+                    ? 'Try adjusting your filters or search terms'
+                    : 'No school subscriptions yet'}
+                </Typography>
+              </Paper>
+            )}
+          </>
         )}
 
         {/* Invoices Tab */}
         {tabValue === 2 && (
-          <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
-            <Table>
-              <TableHead>
+          <>
+            <Box sx={{ mb: 2 }}>
+              <AdvancedFilter
+                fields={[
+                  {
+                    name: 'status',
+                    label: 'Invoice Status',
+                    type: 'select',
+                    options: [
+                      { value: 'paid', label: 'Paid' },
+                      { value: 'pending', label: 'Pending' },
+                      { value: 'overdue', label: 'Overdue' },
+                    ],
+                  },
+                ]}
+                onFilterChange={(newFilters) => setFilters(newFilters)}
+                onSearchChange={(searchTerm) => setSearch(searchTerm)}
+                searchPlaceholder="Search by invoice number or school..."
+              />
+            </Box>
+            {invoicesLoading ? (
+              <Paper sx={{ p: 3, textAlign: 'center' }}>
+                <LinearProgress />
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  Loading invoices...
+                </Typography>
+              </Paper>
+            ) : invoices.length > 0 ? (
+              <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
+                <Table>
+                  <TableHead>
                 <TableRow sx={{ background: '#f8fafc' }}>
                   <TableCell sx={{ fontWeight: 600 }}>Invoice #</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>School</TableCell>
@@ -519,17 +739,40 @@ const SubscriptionBilling: React.FC = () => {
                     <TableCell>{invoice.due_date}</TableCell>
                     <TableCell>{invoice.paid_date || '-'}</TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Download PDF">
-                        <IconButton size="small">
-                          <DownloadIcon />
-                        </IconButton>
-                      </Tooltip>
+                      <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+                        <Tooltip title="View Invoice">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleViewInvoice(invoice)}
+                          >
+                            <ReceiptIcon />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Download PDF">
+                          <IconButton size="small">
+                            <DownloadIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </TableContainer>
+            ) : (
+              <Paper sx={{ p: 4, textAlign: 'center' }}>
+                <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                  No Invoices Found
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {search || Object.keys(filters).length > 0
+                    ? 'Try adjusting your filters or search terms'
+                    : 'No invoices generated yet'}
+                </Typography>
+              </Paper>
+            )}
+          </>
         )}
 
         {/* Analytics Tab */}
@@ -538,11 +781,26 @@ const SubscriptionBilling: React.FC = () => {
             <Grid item xs={12} md={8}>
               <Card>
                 <CardContent>
-                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
-                    Revenue & Subscription Growth
-                  </Typography>
-                  <ResponsiveContainer width="100%" height={400}>
-                    <AreaChart data={revenueData}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      Revenue & Subscription Growth
+                    </Typography>
+                    <FormControl size="small" sx={{ minWidth: 150 }}>
+                      <InputLabel>View Type</InputLabel>
+                      <Select
+                        value="area"
+                        label="View Type"
+                        onChange={() => {}}
+                      >
+                        <MenuItem value="area">Area Chart</MenuItem>
+                        <MenuItem value="line">Line Chart</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+                  {revenueData.length > 0 ? (
+                    <>
+                      <ResponsiveContainer width="100%" height={400}>
+                        <AreaChart data={revenueData}>
                       <defs>
                         <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#667eea" stopOpacity={0.3} />
@@ -579,6 +837,46 @@ const SubscriptionBilling: React.FC = () => {
                       />
                     </AreaChart>
                   </ResponsiveContainer>
+                  <Box sx={{ mt: 2 }}>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={revenueData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="month" stroke="#64748b" />
+                        <YAxis stroke="#64748b" />
+                        <RechartsTooltip
+                          contentStyle={{
+                            borderRadius: 8,
+                            border: 'none',
+                            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="revenue"
+                          stroke="#667eea"
+                          strokeWidth={3}
+                          dot={{ fill: '#667eea', r: 5 }}
+                          activeDot={{ r: 8 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="subscriptions"
+                          stroke="#10b981"
+                          strokeWidth={3}
+                          dot={{ fill: '#10b981', r: 5 }}
+                          activeDot={{ r: 8 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </Box>
+                    </>
+                  ) : (
+                    <Box sx={{ p: 4, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        No revenue data available yet
+                      </Typography>
+                    </Box>
+                  )}
                 </CardContent>
               </Card>
             </Grid>
@@ -588,10 +886,11 @@ const SubscriptionBilling: React.FC = () => {
                   <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
                     Plan Distribution
                   </Typography>
-                  <ResponsiveContainer width="100%" height={400}>
-                    <PieChart>
-                      <Pie
-                        data={planDistribution}
+                  {planDistribution.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={400}>
+                      <PieChart>
+                        <Pie
+                          data={planDistribution}
                         cx="50%"
                         cy="50%"
                         labelLine={false}
@@ -610,6 +909,13 @@ const SubscriptionBilling: React.FC = () => {
                       <RechartsTooltip />
                     </PieChart>
                   </ResponsiveContainer>
+                  ) : (
+                    <Box sx={{ p: 4, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">
+                        No subscription data available yet
+                      </Typography>
+                    </Box>
+                  )}
                 </CardContent>
               </Card>
             </Grid>
@@ -665,6 +971,132 @@ const SubscriptionBilling: React.FC = () => {
             >
               Save Plan
             </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Invoice Detail Dialog */}
+        <Dialog
+          open={invoiceDialogOpen}
+          onClose={() => {
+            setInvoiceDialogOpen(false);
+            setSelectedInvoice(null);
+          }}
+          maxWidth="md"
+          fullWidth
+          PaperProps={{ sx: { borderRadius: 3 } }}
+        >
+          <DialogTitle sx={{ fontWeight: 600, fontSize: '1.5rem' }}>
+            Invoice Details
+          </DialogTitle>
+          <DialogContent>
+            {selectedInvoice ? (
+              <Box sx={{ pt: 2 }}>
+                <Grid container spacing={2}>
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Invoice Number
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                      {selectedInvoice.invoice_number}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Status
+                    </Typography>
+                    <Box sx={{ mt: 0.5 }}>
+                      <Chip
+                        label={selectedInvoice.status}
+                        color={
+                          selectedInvoice.status === 'paid'
+                            ? 'success'
+                            : selectedInvoice.status === 'overdue'
+                            ? 'error'
+                            : 'warning'
+                        }
+                        size="small"
+                        sx={{ fontWeight: 500 }}
+                      />
+                    </Box>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      School Name
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                      {selectedInvoice.school_name}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Amount
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                      ${selectedInvoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Due Date
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                      {selectedInvoice.due_date ? new Date(selectedInvoice.due_date).toLocaleDateString() : '-'}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Paid Date
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.5 }}>
+                      {selectedInvoice.paid_date ? new Date(selectedInvoice.paid_date).toLocaleDateString() : '-'}
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </Box>
+            ) : (
+              <Box sx={{ pt: 2, textAlign: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  No invoice selected
+                </Typography>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ p: 3, pt: 2 }}>
+            <Button
+              onClick={() => {
+                setInvoiceDialogOpen(false);
+                setSelectedInvoice(null);
+              }}
+              sx={{ borderRadius: 2 }}
+            >
+              Close
+            </Button>
+            {selectedInvoice && (
+              <Button
+                variant="contained"
+                startIcon={<DownloadIcon />}
+                onClick={() => {
+                  if (selectedInvoice) {
+                    superadminService.downloadInvoice(selectedInvoice.id).then((blob) => {
+                      const url = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.setAttribute('download', `${selectedInvoice.invoice_number}.pdf`);
+                      document.body.appendChild(link);
+                      link.click();
+                      link.remove();
+                      window.URL.revokeObjectURL(url);
+                    });
+                  }
+                }}
+                sx={{
+                  borderRadius: 2,
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                }}
+              >
+                Download PDF
+              </Button>
+            )}
           </DialogActions>
         </Dialog>
       </Container>

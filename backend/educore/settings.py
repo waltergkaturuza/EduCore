@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'apps.lms',
     'apps.superadmin',
     'apps.schooladmin',
+    'apps.teachers',
 ]
 
 MIDDLEWARE = [

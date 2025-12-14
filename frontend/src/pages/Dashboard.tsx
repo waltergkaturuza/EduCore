@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -29,12 +29,14 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  // Redirect superadmin to superadmin dashboard, admin to school admin dashboard
+  // Redirect superadmin to superadmin dashboard, admin to school admin dashboard, teacher to teacher dashboard
   React.useEffect(() => {
     if (user?.role === 'superadmin') {
       navigate('/superadmin', { replace: true });
     } else if (user?.role === 'admin') {
       navigate('/schooladmin/dashboard', { replace: true });
+    } else if (user?.role === 'teacher') {
+      navigate('/teacher/dashboard', { replace: true });
     }
   }, [user?.role, navigate]);
 
@@ -416,46 +418,51 @@ const Dashboard: React.FC = () => {
 
           {/* Recent Activity */}
           <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
-                  Recent Activity
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {[1, 2, 3].map((item) => (
-                    <Box
-                      key={item}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 2,
-                        p: 2,
-                        borderRadius: 2,
-                        background: '#f8fafc',
-                      }}
-                    >
-                      <Avatar
+            <Paper sx={{ p: 3, borderRadius: 2 }}>
+              <Card>
+                <CardContent>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+                    <SchoolIcon sx={{ color: 'primary.main' }} />
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      Recent Activity
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {[1, 2, 3].map((item) => (
+                      <Box
+                        key={item}
                         sx={{
-                          width: 40,
-                          height: 40,
-                          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 2,
+                          p: 2,
+                          borderRadius: 2,
+                          background: '#f8fafc',
                         }}
                       >
-                        <CheckCircleIcon />
-                      </Avatar>
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                          Activity {item}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {item} hour{item > 1 ? 's' : ''} ago
-                        </Typography>
+                        <Avatar
+                          sx={{
+                            width: 40,
+                            height: 40,
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                          }}
+                        >
+                          <CheckCircleIcon />
+                        </Avatar>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            Activity {item}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {item} hour{item > 1 ? 's' : ''} ago
+                          </Typography>
+                        </Box>
                       </Box>
-                    </Box>
-                  ))}
-                </Box>
-              </CardContent>
-            </Card>
+                    ))}
+                  </Box>
+                </CardContent>
+              </Card>
+            </Paper>
           </Grid>
         </Grid>
       </Container>

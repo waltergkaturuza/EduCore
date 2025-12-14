@@ -56,17 +56,25 @@ const ExecutiveDashboard: React.FC = () => {
     queryKey: ['dashboardMetrics'],
     queryFn: async () => {
       try {
+        console.log('[ExecutiveDashboard] Fetching metrics...');
         const data = await schooladminService.getLatestMetrics();
-        console.log('Dashboard metrics received:', data);
+        console.log('[ExecutiveDashboard] Metrics received:', data);
         return data;
-      } catch (err) {
-        console.error('Error fetching dashboard metrics:', err);
+      } catch (err: any) {
+        console.error('[ExecutiveDashboard] Error fetching dashboard metrics:', err);
+        console.error('[ExecutiveDashboard] Error details:', {
+          message: err?.message,
+          response: err?.response?.data,
+          status: err?.response?.status,
+        });
         throw err;
       }
     },
     refetchInterval: 30000, // Refresh every 30 seconds
     retry: 1,
   });
+
+  console.log('[ExecutiveDashboard] Render state:', { isLoading, error, hasData: !!metricsData });
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -75,7 +83,9 @@ const ExecutiveDashboard: React.FC = () => {
     setRefreshing(false);
   };
 
+  // Render loading state
   if (isLoading) {
+    console.log('[ExecutiveDashboard] Rendering loading state');
     return (
       <Layout>
         <Box sx={{ p: 3 }}>
@@ -86,24 +96,44 @@ const ExecutiveDashboard: React.FC = () => {
     );
   }
 
+  // Render error state
   if (error) {
-    console.error('Dashboard metrics error:', error);
+    console.error('[ExecutiveDashboard] Rendering error state:', error);
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : (error as any)?.response?.data?.error || (error as any)?.response?.data?.detail || 'Unknown error';
+    const statusCode = (error as any)?.response?.status;
+    
     return (
       <Layout>
         <Box sx={{ p: 3 }}>
           <Alert severity="error">
-            <AlertTitle>Error</AlertTitle>
-            Failed to load dashboard metrics: {error instanceof Error ? error.message : 'Unknown error'}. Please try again.
+            <AlertTitle>Error Loading Dashboard</AlertTitle>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              Failed to load dashboard metrics: {errorMessage}
+            </Typography>
+            {statusCode && (
+              <Typography variant="caption" color="text.secondary">
+                HTTP Status: {statusCode}
+              </Typography>
+            )}
           </Alert>
-          <Button variant="contained" onClick={() => refetch()} sx={{ mt: 2 }}>
-            Retry
-          </Button>
+          <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+            <Button variant="contained" onClick={() => refetch()}>
+              Retry
+            </Button>
+            <Button variant="outlined" onClick={handleRefresh}>
+              Calculate Metrics
+            </Button>
+          </Box>
         </Box>
       </Layout>
     );
   }
 
+  // Render no data state
   if (!metricsData) {
+    console.log('[ExecutiveDashboard] Rendering no data state');
     return (
       <Layout>
         <Box sx={{ p: 3 }}>
@@ -111,8 +141,8 @@ const ExecutiveDashboard: React.FC = () => {
             <AlertTitle>No Data</AlertTitle>
             No dashboard metrics available. Click refresh to calculate metrics.
           </Alert>
-          <Button variant="contained" onClick={handleRefresh} sx={{ mt: 2 }}>
-            Calculate Metrics
+          <Button variant="contained" onClick={handleRefresh} sx={{ mt: 2 }} disabled={refreshing}>
+            {refreshing ? 'Calculating...' : 'Calculate Metrics'}
           </Button>
         </Box>
       </Layout>
@@ -120,9 +150,11 @@ const ExecutiveDashboard: React.FC = () => {
   }
 
   const metrics = metricsData as DashboardMetrics;
+  console.log('[ExecutiveDashboard] Processing metrics:', metrics);
 
   // Handle case where metrics might be empty or have default values
   if (!metrics || Object.keys(metrics).length === 0) {
+    console.log('[ExecutiveDashboard] Metrics object is empty');
     return (
       <Layout>
         <Box sx={{ p: 3 }}>
@@ -130,8 +162,8 @@ const ExecutiveDashboard: React.FC = () => {
             <AlertTitle>No Metrics</AlertTitle>
             Dashboard metrics are being calculated. Please wait or click refresh.
           </Alert>
-          <Button variant="contained" onClick={handleRefresh} sx={{ mt: 2 }}>
-            Calculate Metrics
+          <Button variant="contained" onClick={handleRefresh} sx={{ mt: 2 }} disabled={refreshing}>
+            {refreshing ? 'Calculating...' : 'Calculate Metrics'}
           </Button>
         </Box>
       </Layout>
@@ -189,6 +221,8 @@ const ExecutiveDashboard: React.FC = () => {
     revenue_forecast: metrics.revenue_forecast || {},
   };
 
+  console.log('[ExecutiveDashboard] Rendering dashboard with metrics');
+  
   return (
     <Layout>
       <Box sx={{ p: 3 }}>
@@ -202,15 +236,22 @@ const ExecutiveDashboard: React.FC = () => {
               Real-time decision-making cockpit
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<RefreshIcon />}
-            onClick={handleRefresh}
-            disabled={refreshing}
-            sx={{ borderRadius: 2 }}
-          >
-            Refresh Metrics
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="Refresh dashboard metrics">
+              <IconButton onClick={handleRefresh} disabled={refreshing} color="primary">
+                <RefreshIcon />
+              </IconButton>
+            </Tooltip>
+            <Button
+              variant="contained"
+              startIcon={<RefreshIcon />}
+              onClick={handleRefresh}
+              disabled={refreshing}
+              sx={{ borderRadius: 2 }}
+            >
+              Refresh Metrics
+            </Button>
+          </Box>
         </Box>
 
         {/* Strategic Widgets */}
@@ -314,10 +355,22 @@ const ExecutiveDashboard: React.FC = () => {
           <Grid item xs={12} sm={6} md={3}>
             <Card sx={{ borderRadius: 3, boxShadow: 3 }}>
               <CardContent>
-                <Typography variant="body2" color="text.secondary">Academic Performance Index</Typography>
-                <Typography variant="h4" sx={{ fontWeight: 700, mt: 1, color: safeMetrics.academic_performance_index >= 70 ? 'success.main' : 'warning.main' }}>
-                  {safeMetrics.academic_performance_index.toFixed(1)}%
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Academic Performance Index</Typography>
+                  <Tooltip title={safeMetrics.academic_performance_index >= 70 ? 'Performance is on track' : 'Performance needs attention'}>
+                    <AssessmentIcon sx={{ fontSize: 20, color: safeMetrics.academic_performance_index >= 70 ? 'success.main' : 'warning.main' }} />
+                  </Tooltip>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="h4" sx={{ fontWeight: 700, color: safeMetrics.academic_performance_index >= 70 ? 'success.main' : 'warning.main' }}>
+                    {safeMetrics.academic_performance_index.toFixed(1)}%
+                  </Typography>
+                  {safeMetrics.academic_performance_index >= 70 ? (
+                    <TrendingUpIcon sx={{ color: 'success.main' }} />
+                  ) : (
+                    <TrendingDownIcon sx={{ color: 'warning.main' }} />
+                  )}
+                </Box>
                 <LinearProgress
                   variant="determinate"
                   value={safeMetrics.academic_performance_index}
@@ -335,10 +388,22 @@ const ExecutiveDashboard: React.FC = () => {
           <Grid item xs={12} sm={6} md={3}>
             <Card sx={{ borderRadius: 3, boxShadow: 3 }}>
               <CardContent>
-                <Typography variant="body2" color="text.secondary">Fee Collection vs Target</Typography>
-                <Typography variant="h4" sx={{ fontWeight: 700, mt: 1, color: safeMetrics.fee_collection_vs_target >= 80 ? 'success.main' : 'warning.main' }}>
-                  {safeMetrics.fee_collection_vs_target.toFixed(1)}%
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">Fee Collection vs Target</Typography>
+                  <Tooltip title="Fee collection performance">
+                    <AttachMoneyIcon sx={{ fontSize: 20, color: safeMetrics.fee_collection_vs_target >= 80 ? 'success.main' : 'warning.main' }} />
+                  </Tooltip>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="h4" sx={{ fontWeight: 700, color: safeMetrics.fee_collection_vs_target >= 80 ? 'success.main' : 'warning.main' }}>
+                    {safeMetrics.fee_collection_vs_target.toFixed(1)}%
+                  </Typography>
+                  {safeMetrics.fee_collection_vs_target >= 80 ? (
+                    <TrendingUpIcon sx={{ color: 'success.main' }} />
+                  ) : (
+                    <TrendingDownIcon sx={{ color: 'warning.main' }} />
+                  )}
+                </Box>
                 <LinearProgress
                   variant="determinate"
                   value={safeMetrics.fee_collection_vs_target}

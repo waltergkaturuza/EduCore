@@ -86,6 +86,10 @@ const CommunicationHub: React.FC = () => {
   const logs = (logsData as any)?.results || [];
   const events = (eventsData as any)?.results || [];
 
+  const handleViewCampaign = (campaign: CommunicationCampaign) => {
+    setSelectedCampaign(campaign);
+  };
+
   const sendCampaignMutation = useMutation({
     mutationFn: (id: number) => schooladminService.sendCampaign(id),
     onSuccess: () => {
@@ -254,11 +258,16 @@ const CommunicationHub: React.FC = () => {
                               size="small"
                               color="primary"
                               onClick={() => sendCampaignMutation.mutate(campaign.id)}
+                              title="Send Campaign"
                             >
                               <SendIcon />
                             </IconButton>
                           )}
-                          <IconButton size="small">
+                          <IconButton 
+                            size="small"
+                            onClick={() => handleViewCampaign(campaign)}
+                            title="View Campaign Details"
+                          >
                             <VisibilityIcon />
                           </IconButton>
                         </TableCell>
@@ -303,43 +312,49 @@ const CommunicationHub: React.FC = () => {
 
             {/* History Tab */}
             {tabValue === 2 && (
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Recipient</TableCell>
-                      <TableCell>Channel</TableCell>
-                      <TableCell>Message</TableCell>
-                      <TableCell>Status</TableCell>
-                      <TableCell>Sent At</TableCell>
-                      <TableCell>Delivered At</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {logs.map((log: any) => (
-                      <TableRow key={log.id} hover>
-                        <TableCell>{log.recipient_name}</TableCell>
-                        <TableCell>
-                          <Chip label={log.channel.toUpperCase()} size="small" />
-                        </TableCell>
-                        <TableCell>{log.message.substring(0, 50)}...</TableCell>
-                        <TableCell>
-                          <Chip
-                            label={log.status}
-                            size="small"
-                            color={
-                              log.status === 'delivered' ? 'success' :
-                              log.status === 'failed' ? 'error' : 'default'
-                            }
-                          />
-                        </TableCell>
-                        <TableCell>{log.sent_at ? new Date(log.sent_at).toLocaleString() : '-'}</TableCell>
-                        <TableCell>{log.delivered_at ? new Date(log.delivered_at).toLocaleString() : '-'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+              <Box>
+                {logs.length === 0 ? (
+                  <Alert severity="info">No communication logs found.</Alert>
+                ) : (
+                  <TableContainer>
+                    <Table>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Recipient</TableCell>
+                          <TableCell>Channel</TableCell>
+                          <TableCell>Message</TableCell>
+                          <TableCell>Status</TableCell>
+                          <TableCell>Sent At</TableCell>
+                          <TableCell>Delivered At</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {logs.map((log: any) => (
+                          <TableRow key={log.id} hover>
+                            <TableCell>{log.recipient_name}</TableCell>
+                            <TableCell>
+                              <Chip label={log.channel.toUpperCase()} size="small" />
+                            </TableCell>
+                            <TableCell>{log.message.substring(0, 50)}...</TableCell>
+                            <TableCell>
+                              <Chip
+                                label={log.status}
+                                size="small"
+                                color={
+                                  log.status === 'delivered' ? 'success' :
+                                  log.status === 'failed' ? 'error' : 'default'
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>{log.sent_at ? new Date(log.sent_at).toLocaleString() : '-'}</TableCell>
+                            <TableCell>{log.delivered_at ? new Date(log.delivered_at).toLocaleString() : '-'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+              </Box>
             )}
 
             {/* Events Tab */}
@@ -412,12 +427,51 @@ const CommunicationHub: React.FC = () => {
             </FormControl>
             <TextField fullWidth label="Message Content" multiline rows={6} sx={{ mb: 2 }} />
             <TextField fullWidth label="Schedule (Optional)" type="datetime-local" sx={{ mb: 2 }} InputLabelProps={{ shrink: true }} />
+            <FormControlLabel
+              control={<Switch defaultChecked={false} />}
+              label="Send immediately (if not scheduled)"
+              sx={{ mb: 2 }}
+            />
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setCreateCampaignDialogOpen(false)}>Cancel</Button>
             <Button variant="contained" startIcon={<SendIcon />}>Create & Send</Button>
           </DialogActions>
         </Dialog>
+
+        {/* Campaign Details Dialog */}
+        {selectedCampaign && (
+          <Dialog open={!!selectedCampaign} onClose={() => setSelectedCampaign(null)} maxWidth="md" fullWidth>
+            <DialogTitle>Campaign Details - {selectedCampaign.name}</DialogTitle>
+            <DialogContent>
+              <Alert severity={selectedCampaign.status === 'completed' ? 'success' : selectedCampaign.status === 'failed' ? 'error' : 'info'} sx={{ mb: 2 }}>
+                Status: {selectedCampaign.status.toUpperCase()}
+              </Alert>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <TextField fullWidth label="Campaign Type" value={selectedCampaign.campaign_type} disabled />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField fullWidth label="Target Audience" value={selectedCampaign.target_audience.replace('_', ' ')} disabled />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField fullWidth label="Message Content" multiline rows={4} value={selectedCampaign.message_content} disabled />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="body2" color="text.secondary">Total Recipients</Typography>
+                  <Typography variant="h6">{selectedCampaign.total_recipients}</Typography>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="body2" color="text.secondary">Sent / Delivered</Typography>
+                  <Typography variant="h6">{selectedCampaign.sent_count} / {selectedCampaign.delivered_count}</Typography>
+                </Grid>
+              </Grid>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setSelectedCampaign(null)}>Close</Button>
+            </DialogActions>
+          </Dialog>
+        )}
 
         {/* Create Event Dialog */}
         <Dialog open={createEventDialogOpen} onClose={() => setCreateEventDialogOpen(false)} maxWidth="sm" fullWidth>
